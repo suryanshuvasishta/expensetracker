@@ -1,4 +1,4 @@
-import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
 
 interface Props {
   currentPage: string;
@@ -9,6 +9,7 @@ interface Props {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'budget', label: 'Budget', icon: Wallet },
   { id: 'transactions', label: 'Transactions', icon: List },
   { id: 'upload', label: 'Upload', icon: Upload },
   { id: 'trends', label: 'Trends', icon: TrendingUp },

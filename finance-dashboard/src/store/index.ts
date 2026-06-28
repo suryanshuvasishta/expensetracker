@@ -2,12 +2,13 @@ import { create } from 'zustand';
 import { db, getCategories } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget } from '../types';
 
 interface AppState {
   transactions: Transaction[];
   categories: Category[];
   uploadedFiles: UploadedFile[];
+  budgets: MonthlyBudget[];
   selectedMonth: string; // YYYY-MM
   isLoading: boolean;
   error: string | null;
@@ -22,12 +23,15 @@ interface AppState {
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
   rerunCorrelation: () => Promise<void>;
+  saveBudget: (budget: MonthlyBudget) => Promise<void>;
+  getBudget: (month: string) => MonthlyBudget | undefined;
 }
 
 export const useStore = create<AppState>((set, get) => ({
   transactions: [],
   categories: [],
   uploadedFiles: [],
+  budgets: [],
   selectedMonth: new Date().toISOString().slice(0, 7),
   isLoading: false,
   error: null,
@@ -35,12 +39,13 @@ export const useStore = create<AppState>((set, get) => ({
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles] = await Promise.all([
+      const [transactions, categories, uploadedFiles, budgets] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
         db.uploadedFiles.toArray(),
+        db.budgets.toArray(),
       ]);
-      set({ transactions, categories, uploadedFiles, isLoading: false });
+      set({ transactions, categories, uploadedFiles, budgets, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
@@ -112,5 +117,16 @@ export const useStore = create<AppState>((set, get) => ({
     const correlated = correlateTransactions(categorized);
     await db.transactions.bulkPut(correlated);
     set({ transactions: correlated });
+  },
+
+  async saveBudget(budget: MonthlyBudget) {
+    await db.budgets.put(budget);
+    set(state => ({
+      budgets: [...state.budgets.filter(b => b.id !== budget.id), budget],
+    }));
+  },
+
+  getBudget(month: string) {
+    return get().budgets.find(b => b.month === month);
   },
 }));
