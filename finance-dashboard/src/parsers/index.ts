@@ -18,11 +18,58 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   const hdfcHeaderIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c.includes('Narration')));
   if (hdfcHeaderIdx >= 0) return parseHDFCXLSRows(rows, hdfcHeaderIdx, file.name);
 
-  // Detect ICICI format: header row has "Transaction Date" and "Transaction Remarks"
+  // Detect ICICI Bank format: header row has "Transaction Date" and "Transaction Remarks"
   const iciciHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c.includes('Transaction Remarks')));
   if (iciciHeaderIdx >= 0) return parseICICIXLSRows(rows, iciciHeaderIdx, file.name);
 
+  // Detect ICICI CC format: header row has "Transaction Date" and "Details" and "Amount (INR)"
+  const iciciCCHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c === 'Details') && r.some(c => c.includes('Amount')));
+  if (iciciCCHeaderIdx >= 0) return parseICICICCXLSRows(rows, iciciCCHeaderIdx, file.name);
+
   return [];
+}
+
+function parseICICICCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx];
+  const dateCol = header.findIndex(c => c === 'Transaction Date');
+  const narrationCol = header.findIndex(c => c === 'Details');
+  const amountCol = header.findIndex(c => c.includes('Amount'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 2; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const rawAmount = row[amountCol]?.trim() || '';
+
+    // Amount format: "1234.56 Dr." or "1234.56 Cr."
+    const amountMatch = rawAmount.match(/([\d,]+\.?\d*)\s*(Dr\.|Cr\.)/i);
+    if (!amountMatch) continue;
+
+    const amount = parseAmount(amountMatch[1]);
+    const isDebit = amountMatch[2].toLowerCase().startsWith('dr');
+
+    if (amount === 0) continue;
+
+    transactions.push({
+      date,
+      account: 'ICICI Credit Card',
+      amount,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+    });
+  }
+
+  return transactions;
 }
 
 function parseICICIXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
