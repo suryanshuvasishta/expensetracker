@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { PlusCircle, Trash2, Edit2, Upload, X, Check, KeyRound } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
-import type { Investment, AssetClass, Owner } from '../../types';
+import type { Investment, AssetClass, Owner, Liability, LiabilityType } from '../../types';
 import { ASSET_CLASSES, OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
 import { extractTextFromPDF } from '../../parsers';
+
+const LIABILITY_TYPES: LiabilityType[] = ['Home Loan', 'Car Loan', 'Personal Loan', 'Credit Card', 'Other'];
 
 const ASSET_CLASS_COLORS: Record<AssetClass, string> = {
   'FD': '#facc15',
@@ -39,10 +41,20 @@ const EMPTY_INVESTMENT = (owner: Owner): Omit<Investment, 'id'> => ({
   updatedAt: new Date().toISOString(),
 });
 
+const EMPTY_LIABILITY = (owner: Owner): Omit<Liability, 'id'> => ({
+  owner,
+  name: '',
+  type: 'Home Loan',
+  outstandingAmount: 0,
+  updatedAt: new Date().toISOString(),
+});
+
 export function PortfolioPage() {
-  const { investments, saveInvestment, deleteInvestment, bulkSaveInvestments, selectedOwner } = useStore();
+  const { investments, saveInvestment, deleteInvestment, bulkSaveInvestments, selectedOwner, liabilities, saveLiability, deleteLiability } = useStore();
   const [editing, setEditing] = useState<Investment | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingLiab, setEditingLiab] = useState<Liability | null>(null);
+  const [showLiabForm, setShowLiabForm] = useState(false);
   const [importError, setImportError] = useState('');
   const [importing, setImporting] = useState<'zerodha' | 'cas' | null>(null);
   const [casPassword, setCasPassword] = useState('');
@@ -83,6 +95,27 @@ export function PortfolioPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this holding?')) return;
     await deleteInvestment(id);
+  }
+
+  const visibleLiabs = ownerFilter ? liabilities.filter(l => l.owner === ownerFilter || l.owner === 'Joint') : liabilities;
+  const totalLiabilities = visibleLiabs.reduce((s, l) => s + l.outstandingAmount, 0);
+
+  function startNewLiab() {
+    const owner = (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as Owner;
+    setEditingLiab({ id: generateId(), ...EMPTY_LIABILITY(owner) });
+    setShowLiabForm(true);
+  }
+
+  async function handleSaveLiab() {
+    if (!editingLiab) return;
+    await saveLiability(editingLiab);
+    setShowLiabForm(false);
+    setEditingLiab(null);
+  }
+
+  async function handleDeleteLiab(id: string) {
+    if (!confirm('Delete this liability?')) return;
+    await deleteLiability(id);
   }
 
   // Zerodha XLSX import
@@ -317,7 +350,83 @@ export function PortfolioPage() {
             <div style={{ fontSize: '0.8125rem' }}>Add manually, import from Zerodha (XLSX), or from CAMS/Kfintech (CAS PDF)</div>
           </div>
         )}
+
+        {/* Liabilities */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9375rem', color: 'var(--text-primary)' }}>Liabilities</span>
+            {totalLiabilities > 0 && (
+              <span style={{ fontSize: '0.875rem', color: '#f87171', fontWeight: 600 }}>{fmt(totalLiabilities)}</span>
+            )}
+            <button className="btn-primary" onClick={startNewLiab} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8rem', padding: '0.375rem 0.75rem' }}>
+              <PlusCircle size={14} /> Add
+            </button>
+          </div>
+          {visibleLiabs.length === 0 ? (
+            <div style={{ padding: '1.5rem', textAlign: 'center', color: '#64748b', fontSize: '0.875rem' }}>No liabilities added</div>
+          ) : (
+            <div>
+              {visibleLiabs.map(l => (
+                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 1rem', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--text-primary)', fontWeight: 500 }}>{l.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{l.type} · {l.owner}{l.emi ? ` · EMI ₹${l.emi.toLocaleString('en-IN')}` : ''}{l.interestRate ? ` · ${l.interestRate}%` : ''}</div>
+                  </div>
+                  <span style={{ fontWeight: 600, color: '#f87171', fontSize: '0.875rem' }}>{fmtFull(l.outstandingAmount)}</span>
+                  <button onClick={() => { setEditingLiab({ ...l }); setShowLiabForm(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}><Edit2 size={13} /></button>
+                  <button onClick={() => handleDeleteLiab(l.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {showLiabForm && editingLiab && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}>
+          <div className="card" style={{ width: '100%', maxWidth: '440px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-primary)' }}>{editingLiab.name ? 'Edit Liability' : 'Add Liability'}</span>
+              <button onClick={() => { setShowLiabForm(false); setEditingLiab(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={18} /></button>
+            </div>
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              <Field label="Name *">
+                <input value={editingLiab.name} onChange={e => setEditingLiab({ ...editingLiab, name: e.target.value })} placeholder="e.g. HDFC Home Loan" style={{ width: '100%' }} />
+              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Field label="Type">
+                  <select value={editingLiab.type} onChange={e => setEditingLiab({ ...editingLiab, type: e.target.value as LiabilityType })} style={{ width: '100%' }}>
+                    {LIABILITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </Field>
+                <Field label="Owner">
+                  <select value={editingLiab.owner} onChange={e => setEditingLiab({ ...editingLiab, owner: e.target.value as Owner })} style={{ width: '100%' }}>
+                    {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Outstanding Amount (₹) *">
+                <input type="number" value={editingLiab.outstandingAmount || ''} onChange={e => setEditingLiab({ ...editingLiab, outstandingAmount: parseFloat(e.target.value) || 0 })} placeholder="0" style={{ width: '100%' }} />
+              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Field label="EMI (₹/month)">
+                  <input type="number" value={editingLiab.emi ?? ''} onChange={e => setEditingLiab({ ...editingLiab, emi: parseFloat(e.target.value) || undefined })} placeholder="Optional" style={{ width: '100%' }} />
+                </Field>
+                <Field label="Interest Rate (%)">
+                  <input type="number" value={editingLiab.interestRate ?? ''} onChange={e => setEditingLiab({ ...editingLiab, interestRate: parseFloat(e.target.value) || undefined })} placeholder="Optional" style={{ width: '100%' }} />
+                </Field>
+              </div>
+              <Field label="Notes">
+                <input value={editingLiab.notes ?? ''} onChange={e => setEditingLiab({ ...editingLiab, notes: e.target.value || undefined })} placeholder="Optional" style={{ width: '100%' }} />
+              </Field>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button className="btn-ghost" onClick={() => { setShowLiabForm(false); setEditingLiab(null); }}>Cancel</button>
+              <button className="btn-primary" onClick={handleSaveLiab} disabled={!editingLiab.name || editingLiab.outstandingAmount <= 0}><Check size={15} /> Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && editing && (
         <InvestmentForm
