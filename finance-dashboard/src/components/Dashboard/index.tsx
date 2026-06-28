@@ -5,12 +5,17 @@ import { CategoryChart } from './CategoryChart';
 import { PaymentMethodChart } from './PaymentMethodChart';
 import { TrendChart } from './TrendChart';
 import { TopMerchants } from './TopMerchants';
+import { NetWorthCard } from './NetWorthCard';
 import { ArrowDownRight, ArrowUpRight, Activity, CreditCard } from 'lucide-react';
 
 export function Dashboard() {
-  const { transactions, categories, selectedMonth } = useStore();
+  const { transactions, categories, selectedMonth, selectedOwner, investments, liabilities } = useStore();
 
-  const monthTxns = transactions.filter(t => t.month === selectedMonth);
+  const monthTxns = transactions.filter(t => {
+    if (t.month !== selectedMonth) return false;
+    if (selectedOwner !== 'All' && t.owner !== selectedOwner) return false;
+    return true;
+  });
   const allTxns = transactions;
 
   const totalDebit = monthTxns
@@ -65,6 +70,9 @@ export function Dashboard() {
             icon={<CreditCard size={18} />}
           />
         </div>
+
+        {/* Net Worth Card */}
+        <NetWorthCard investments={investments} liabilities={liabilities} selectedOwner={selectedOwner} />
 
         {/* Trend Chart (full width) */}
         <TrendChart transactions={allTxns} />

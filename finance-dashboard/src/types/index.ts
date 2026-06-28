@@ -170,3 +170,17 @@ export const CATEGORY_GROUPS: { group: string; categories: string[] }[] = [
 ];
 
 export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'>;
+
+export type LiabilityType = 'Home Loan' | 'Car Loan' | 'Personal Loan' | 'Credit Card' | 'Other';
+
+export interface Liability {
+  id: string;
+  owner: Owner;
+  name: string;
+  type: LiabilityType;
+  outstandingAmount: number;
+  emi?: number;
+  interestRate?: number;
+  updatedAt: string;
+  notes?: string;
+}
