@@ -14,13 +14,57 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
 
-  // Detect HDFC format: look for header row with "Date" "Narration" "Withdrawal Amt."
-  const headerIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c.includes('Narration')));
-  if (headerIdx >= 0) {
-    return parseHDFCXLSRows(rows, headerIdx, file.name);
-  }
+  // Detect HDFC format: header row has "Date" and "Narration"
+  const hdfcHeaderIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c.includes('Narration')));
+  if (hdfcHeaderIdx >= 0) return parseHDFCXLSRows(rows, hdfcHeaderIdx, file.name);
+
+  // Detect ICICI format: header row has "Transaction Date" and "Transaction Remarks"
+  const iciciHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c.includes('Transaction Remarks')));
+  if (iciciHeaderIdx >= 0) return parseICICIXLSRows(rows, iciciHeaderIdx, file.name);
 
   return [];
+}
+
+function parseICICIXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx].map(c => c.trim());
+  const dateCol = header.findIndex(c => c === 'Transaction Date');
+  const narrationCol = header.findIndex(c => c.includes('Transaction Remarks'));
+  const withdrawalCol = header.findIndex(c => c.includes('Withdrawal'));
+  const depositCol = header.findIndex(c => c.includes('Deposit'));
+  const balanceCol = header.findIndex(c => c.includes('Balance'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const withdrawal = parseAmount(row[withdrawalCol] || '');
+    const deposit = parseAmount(row[depositCol] || '');
+    const balance = parseAmount(row[balanceCol] || '');
+
+    if (withdrawal === 0 && deposit === 0) continue;
+
+    const isDebit = withdrawal > 0;
+    transactions.push({
+      date,
+      account: 'ICICI Bank',
+      amount: isDebit ? withdrawal : deposit,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+      balance,
+    });
+  }
+
+  return transactions;
 }
 
 function parseHDFCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
