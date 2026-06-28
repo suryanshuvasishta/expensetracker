@@ -169,7 +169,7 @@ export const CATEGORY_GROUPS: { group: string; categories: string[] }[] = [
   },
 ];
 
-export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'>;
+export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'> & { owner?: Owner };
 
 export type LiabilityType = 'Home Loan' | 'Car Loan' | 'Personal Loan' | 'Credit Card' | 'Other';
 

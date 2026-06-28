@@ -1,20 +1,23 @@
 import { useState } from 'react';
-import { RefreshCw, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
+import { RefreshCw, Plus, Trash2, Save, AlertCircle, Download, Upload } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { DEFAULT_CATEGORIES } from '../../db/database';
 import { fetchCategoriesFromSheet, parseCategoriesFromCSV } from '../../services/google-drive';
+import { exportSnapshot, importSnapshot, getCurrentFY } from '../../services/snapshot';
 import type { Category } from '../../types';
 import { generateId } from '../../parsers/base';
 
 export function SettingsPage() {
-  const { categories, setCategories, rerunCorrelation } = useStore();
+  const { categories, setCategories, rerunCorrelation, transactions, budgets, investments, liabilities, selectedMonth, loadAll } = useStore();
   const [editCats, setEditCats] = useState<Category[]>([...categories]);
   const [sheetId, setSheetId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [csvText, setCsvText] = useState('');
+  const [snapshotMsg, setSnapshotMsg] = useState('');
+  const [importing, setImporting] = useState(false);
 
   async function syncFromSheet() {
     if (!sheetId || !accessToken) {
@@ -68,10 +71,68 @@ export function SettingsPage() {
     setEditCats([...DEFAULT_CATEGORIES]);
   }
 
+  async function handleExport(filterType: 'month' | 'fy' | 'all', filterValue: string) {
+    try {
+      await exportSnapshot(transactions, budgets, investments, liabilities, categories, filterType, filterValue);
+    } catch (e: any) {
+      setSnapshotMsg(`Export error: ${e.message}`);
+    }
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    setSnapshotMsg('');
+    try {
+      const result = await importSnapshot(file);
+      await loadAll();
+      setSnapshotMsg(`Imported ${result.imported} transactions from "${result.type}"`);
+    } catch (err: any) {
+      setSnapshotMsg(`Import error: ${err.message}`);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
       <Header title="Settings" />
       <div style={{ padding: '1.5rem', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+        {/* Snapshots — Export & Import */}
+        <div className="card">
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>Snapshots — Export & Import</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
+            Export your data as a JSON snapshot. Import merges data — existing records with the same ID are overwritten.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            <button className="btn-ghost" onClick={() => handleExport('month', selectedMonth)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export This Month ({selectedMonth})
+            </button>
+            <button className="btn-ghost" onClick={() => handleExport('fy', getCurrentFY())} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export This FY ({getCurrentFY()})
+            </button>
+            <button className="btn-ghost" onClick={() => handleExport('all', '')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export All Time
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <label style={{ cursor: 'pointer' }}>
+              <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', padding: '0.5rem 1rem' }}>
+                <Upload size={14} /> {importing ? 'Importing…' : 'Import Snapshot'}
+              </span>
+              <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} disabled={importing} />
+            </label>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>⚠️ Importing merges data — existing records with the same ID are overwritten.</span>
+          </div>
+          {snapshotMsg && (
+            <div style={{ marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8125rem', background: snapshotMsg.startsWith('Import error') || snapshotMsg.startsWith('Export error') ? 'rgba(239,68,68,0.1)' : 'rgba(74,222,128,0.1)', color: snapshotMsg.startsWith('Import error') || snapshotMsg.startsWith('Export error') ? '#f87171' : '#4ade80' }}>
+              {snapshotMsg}
+            </div>
+          )}
+        </div>
 
         {/* Google Sheets Sync */}
         <div className="card">
