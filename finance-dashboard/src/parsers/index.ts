@@ -26,7 +26,50 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   const iciciCCHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c === 'Details') && r.some(c => c.includes('Amount')));
   if (iciciCCHeaderIdx >= 0) return parseICICICCXLSRows(rows, iciciCCHeaderIdx, file.name);
 
+  // Detect Axis CC format: header row has "Date", "Transaction Details", "Debit/Credit"
+  const axisHeaderIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c === 'Transaction Details') && r.some(c => c === 'Debit/Credit'));
+  if (axisHeaderIdx >= 0) return parseAxisCCXLSRows(rows, axisHeaderIdx, file.name);
+
   return [];
+}
+
+function parseAxisCCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx];
+  const dateCol = header.findIndex(c => c === 'Date');
+  const narrationCol = header.findIndex(c => c === 'Transaction Details');
+  const amountCol = header.findIndex(c => c.includes('Amount'));
+  const typeCol = header.findIndex(c => c === 'Debit/Credit');
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    // Date format: "15 Jun '26" — strip the apostrophe before parsing
+    const dateStr = (row[dateCol] || '').replace(/'/g, '').trim();
+    if (!dateStr || dateStr.includes('End of Statement')) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const amount = parseAmount(row[amountCol] || '');
+    const isDebit = (row[typeCol] || '').toLowerCase().includes('debit');
+
+    if (amount === 0 || !narration) continue;
+
+    transactions.push({
+      date,
+      account: 'Axis Credit Card',
+      amount,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+    });
+  }
+
+  return transactions;
 }
 
 function parseICICICCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
