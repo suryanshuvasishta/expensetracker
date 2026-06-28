@@ -250,7 +250,7 @@ export function PortfolioPage() {
           const classPnL = classCost > 0 ? classTotal - classCost : null;
           return (
             <div key={ac} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: '#1e293b', borderBottom: '1px solid #334155' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: ASSET_CLASS_COLORS[ac], flexShrink: 0 }} />
                 <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: '#f1f5f9' }}>{ac}</span>
                 <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
@@ -276,7 +276,7 @@ export function PortfolioPage() {
                   const pnl = inv.purchaseCost ? inv.currentValue - inv.purchaseCost : null;
                   const pnlPct = pnl !== null && inv.purchaseCost ? pnl / inv.purchaseCost * 100 : null;
                   return (
-                    <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderTop: '1px solid #1e293b' }}>
+                    <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderTop: '1px solid var(--border-subtle)' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.name}</div>
                         {(inv.notes || inv.goal) && (

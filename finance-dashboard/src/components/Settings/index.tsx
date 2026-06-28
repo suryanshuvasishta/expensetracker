@@ -78,7 +78,7 @@ export function SettingsPage() {
           <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>Sync Categories from Google Sheets</h3>
           <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
             Connect to your expense tracker spreadsheet to import category names and keywords.
-            Your sheet should have columns: <code style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Category Name | Keywords (comma-separated) | Color (hex)</code>
+            Your sheet should have columns: <code style={{ background: 'var(--bg-main)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Category Name | Keywords (comma-separated) | Color (hex)</code>
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div>
@@ -102,7 +102,7 @@ export function SettingsPage() {
         <div className="card">
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>Import Categories from CSV</h3>
           <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: '0 0 0.75rem' }}>
-            Paste CSV with format: <code style={{ background: '#0f172a', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Category Name,keywords;separated;by;semicolons,#hexcolor</code>
+            Paste CSV with format: <code style={{ background: 'var(--bg-main)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>Category Name,keywords;separated;by;semicolons,#hexcolor</code>
           </p>
           <textarea
             value={csvText}
@@ -136,7 +136,7 @@ export function SettingsPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '500px', overflowY: 'auto' }}>
             {editCats.map(cat => (
-              <div key={cat.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: '#0f172a', borderRadius: '8px' }}>
+              <div key={cat.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
                 <input
                   type="color"
                   value={cat.color}

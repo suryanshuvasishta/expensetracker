@@ -1,4 +1,4 @@
-import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet, PieChart } from 'lucide-react';
+import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet, PieChart, Sun, Moon } from 'lucide-react';
 import { useStore } from '../../store';
 import type { Owner } from '../../types';
 
@@ -26,15 +26,15 @@ const OWNER_LABELS: { value: Owner | 'All'; label: string; short: string }[] = [
 ];
 
 export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props) {
-  const { selectedOwner, setSelectedOwner } = useStore();
+  const { selectedOwner, setSelectedOwner, theme, setTheme } = useStore();
 
   return (
     <aside
       style={{
         width: collapsed ? '64px' : '220px',
         minHeight: '100vh',
-        background: '#1e293b',
-        borderRight: '1px solid #334155',
+        background: 'var(--bg-card)',
+        borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         transition: 'width 0.2s ease',
@@ -44,23 +44,23 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
         height: '100vh',
       }}
     >
-      <div style={{ padding: '1.25rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #334155' }}>
+      <div style={{ padding: '1.25rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
         {!collapsed && (
           <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.3px' }}>Finance</div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Dashboard</div>
+            <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Finance</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Dashboard</div>
           </div>
         )}
         <button
           onClick={onToggle}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px', borderRadius: '6px', display: 'flex' }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '4px', borderRadius: '6px', display: 'flex' }}
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
 
       {/* Persona switcher */}
-      <div style={{ padding: '0.625rem 0.5rem', borderBottom: '1px solid #334155' }}>
+      <div style={{ padding: '0.625rem 0.5rem', borderBottom: '1px solid var(--border)' }}>
         {collapsed ? (
           <button
             onClick={() => {
@@ -82,7 +82,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
                   flex: 1, padding: '0.25rem', fontSize: '0.7rem', fontWeight: selectedOwner === o.value ? 700 : 400,
                   borderRadius: '6px', border: 'none', cursor: 'pointer',
                   background: selectedOwner === o.value ? 'rgba(59,130,246,0.2)' : 'transparent',
-                  color: selectedOwner === o.value ? '#60a5fa' : '#64748b',
+                  color: selectedOwner === o.value ? '#60a5fa' : 'var(--text-dim)',
                   transition: 'all 0.15s',
                 }}
               >
@@ -111,7 +111,7 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
                 borderRadius: '8px',
                 border: 'none',
                 background: active ? 'rgba(59,130,246,0.15)' : 'transparent',
-                color: active ? '#60a5fa' : '#94a3b8',
+                color: active ? '#60a5fa' : 'var(--text-muted)',
                 cursor: 'pointer',
                 fontSize: '0.875rem',
                 fontWeight: active ? 500 : 400,
@@ -135,8 +135,15 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
         })}
       </nav>
 
-      <div style={{ padding: '1rem', borderTop: '1px solid #334155', fontSize: '0.7rem', color: '#475569', textAlign: collapsed ? 'center' : 'left' }}>
-        {collapsed ? '🔒' : '🔒 All data stored locally'}
+      <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.7rem', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', gap: '0.5rem' }}>
+        {collapsed ? '🔒' : <span>🔒 All data stored locally</span>}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '2px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+        >
+          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+        </button>
       </div>
     </aside>
   );

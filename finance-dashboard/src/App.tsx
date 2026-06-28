@@ -14,10 +14,15 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const loadAll = useStore(s => s.loadAll);
   const isLoading = useStore(s => s.isLoading);
+  const theme = useStore(s => s.theme);
 
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme === 'light' ? 'light' : '';
+  }, [theme]);
 
   if (isLoading) {
     return (

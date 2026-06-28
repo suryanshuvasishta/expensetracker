@@ -27,16 +27,16 @@ export function Header({ title }: Props) {
   return (
     <header style={{
       padding: '1rem 1.5rem',
-      borderBottom: '1px solid #334155',
+      borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      background: '#0f172a',
+      background: 'var(--bg-main)',
       position: 'sticky',
       top: 0,
       zIndex: 10,
     }}>
-      <h1 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: '#f1f5f9' }}>{title}</h1>
+      <h1 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</h1>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Calendar size={14} color="#94a3b8" />

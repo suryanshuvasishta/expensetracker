@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { db, getCategories } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Owner } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner } from '../types';
 
 interface AppState {
   transactions: Transaction[];
@@ -10,8 +10,10 @@ interface AppState {
   uploadedFiles: UploadedFile[];
   budgets: MonthlyBudget[];
   investments: Investment[];
+  liabilities: Liability[];
   selectedMonth: string; // YYYY-MM
   selectedOwner: Owner | 'All'; // persona filter
+  theme: 'dark' | 'light';
   isLoading: boolean;
   error: string | null;
 
@@ -22,6 +24,7 @@ interface AppState {
   deleteBySourceFile: (sourceFile: string) => Promise<void>;
   setSelectedMonth: (month: string) => void;
   setSelectedOwner: (owner: Owner | 'All') => void;
+  setTheme: (t: 'dark' | 'light') => void;
   setCategories: (cats: Category[]) => Promise<void>;
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
@@ -31,6 +34,8 @@ interface AppState {
   saveInvestment: (inv: Investment) => Promise<void>;
   deleteInvestment: (id: string) => Promise<void>;
   bulkSaveInvestments: (invs: Investment[]) => Promise<void>;
+  saveLiability: (l: Liability) => Promise<void>;
+  deleteLiability: (id: string) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -39,22 +44,25 @@ export const useStore = create<AppState>((set, get) => ({
   uploadedFiles: [],
   budgets: [],
   investments: [],
+  liabilities: [],
   selectedMonth: new Date().toISOString().slice(0, 7),
   selectedOwner: 'Suryanshu',
+  theme: (localStorage.getItem('theme') as 'dark' | 'light') || 'dark',
   isLoading: false,
   error: null,
 
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles, budgets, investments] = await Promise.all([
+      const [transactions, categories, uploadedFiles, budgets, investments, liabilities] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
         db.uploadedFiles.toArray(),
         db.budgets.toArray(),
         db.investments.toArray(),
+        db.liabilities.toArray(),
       ]);
-      set({ transactions, categories, uploadedFiles, budgets, investments, isLoading: false });
+      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
@@ -104,6 +112,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   setSelectedOwner(owner) {
     set({ selectedOwner: owner });
+  },
+
+  setTheme(t) {
+    localStorage.setItem('theme', t);
+    set({ theme: t });
   },
 
   async setCategories(cats: Category[]) {
@@ -161,5 +174,17 @@ export const useStore = create<AppState>((set, get) => ({
     set(state => ({
       investments: [...state.investments.filter(i => !ids.has(i.id)), ...invs],
     }));
+  },
+
+  async saveLiability(l: Liability) {
+    await db.liabilities.put(l);
+    set(state => ({
+      liabilities: [...state.liabilities.filter(x => x.id !== l.id), l],
+    }));
+  },
+
+  async deleteLiability(id: string) {
+    await db.liabilities.delete(id);
+    set(state => ({ liabilities: state.liabilities.filter(x => x.id !== id) }));
   },
 }));
