@@ -9,7 +9,7 @@ import type { Category } from '../../types';
 import { generateId } from '../../parsers/base';
 
 export function SettingsPage() {
-  const { categories, setCategories, rerunCorrelation, transactions, budgets, investments, liabilities, selectedMonth, loadAll } = useStore();
+  const { categories, setCategories, rerunCorrelation, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, selectedMonth, loadAll } = useStore();
   const [editCats, setEditCats] = useState<Category[]>([...categories]);
   const [sheetId, setSheetId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -240,6 +240,38 @@ export function SettingsPage() {
           <button className="btn-primary" onClick={rerunCorrelation} style={{ width: 'fit-content', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <RefreshCw size={14} /> Re-run Correlation
           </button>
+        </div>
+
+        {/* Category rules */}
+        <div className="card">
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>Auto-Classification Rules</h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: '0 0 0.75rem' }}>
+            Rules are learned when you reclassify a transaction. They're applied first on every new upload.
+          </p>
+          {categoryRules.length === 0 ? (
+            <p style={{ color: '#475569', fontSize: '0.8125rem' }}>No rules yet. Reclassify a transaction to start learning.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.7rem', color: '#475569', paddingBottom: '0.375rem', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ flex: 1 }}>Keyword (in narration)</span>
+                <span style={{ width: '160px' }}>→ Category</span>
+                <span style={{ width: '32px' }}></span>
+              </div>
+              {[...categoryRules].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(rule => (
+                <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+                  <span style={{ flex: 1, color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{rule.keyword}</span>
+                  <span style={{ width: '160px', color: '#94a3b8' }}>{rule.category}</span>
+                  <button
+                    onClick={() => deleteCategoryRule(rule.id)}
+                    title="Delete rule"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px', width: '32px' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Data management */}
