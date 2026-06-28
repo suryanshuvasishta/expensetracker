@@ -11,6 +11,13 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   const XLSX = await import('xlsx');
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellText: true, cellDates: false });
+
+  // Detect budget sheet: has multiple tabs named like "Aug25", "Jan26", "Apr 26" etc.
+  const isBudgetSheet = workbook.SheetNames.filter(n =>
+    /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{2}$/i.test(n.trim())
+  ).length >= 2;
+  if (isBudgetSheet) return parseBudgetSheetXLSX(workbook, XLSX);
+
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
 
@@ -31,6 +38,141 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   if (axisHeaderIdx >= 0) return parseAxisCCXLSRows(rows, axisHeaderIdx, file.name);
 
   return [];
+}
+
+// Category name → category id mapping for budget sheet categories
+const BUDGET_SHEET_CATEGORY_MAP: Record<string, string> = {
+  'maid': 'house-help',
+  'cook': 'house-help',
+  'iron': 'house-help',
+  'toys': 'toys-joyrides',
+  'online shopping': 'online-shopping',
+  'one time large expenses (non budgeted)': 'one-time',
+  'home loan pre-emi': 'other-expenses',
+  'credit card pending payment carried forward': 'cc-payment',
+  'on behalf of': 'transfer',
+  'brokerage': 'investment-txn',
+  'ssy': 'investment-txn',
+  'ppf': 'investment-txn',
+};
+
+// Any sheet category containing these substrings → investment-txn
+const INVESTMENT_KEYWORDS = ['fund', 'nifty', 'sensex', 'smallcap', 'midcap', 'flexicap', 'flexi cap', 'balanced advantage', 'equity savings', 'liquid', 'debt'];
+
+function mapBudgetCategory(raw: string): string {
+  const lower = raw.toLowerCase().trim();
+  if (BUDGET_SHEET_CATEGORY_MAP[lower]) return BUDGET_SHEET_CATEGORY_MAP[lower];
+  if (INVESTMENT_KEYWORDS.some(k => lower.includes(k))) return 'investment-txn';
+  // Try direct name match to known category names (lowercase compare)
+  return raw; // leave as-is; categorizer will match by name
+}
+
+const MONTH_ABBR: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+function parseBudgetDate(raw: string, sheetYear: number, _sheetMonth: number): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+
+  // "January 1, 2026" / "February 28, 2026"
+  const longMatch = s.match(/^(\w+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (longMatch) {
+    const m = MONTH_ABBR[longMatch[1].toLowerCase().slice(0, 3)];
+    if (m) {
+      const d = parseInt(longMatch[2]);
+      const y = parseInt(longMatch[3]);
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // "1-Aug", "15-Sep", "31-Dec"
+  const shortMatch = s.match(/^(\d{1,2})-([A-Za-z]{3,})$/);
+  if (shortMatch) {
+    const d = parseInt(shortMatch[1]);
+    const m = MONTH_ABBR[shortMatch[2].toLowerCase().slice(0, 3)];
+    if (m) {
+      // Use sheet year; if month in date < sheet month it wrapped (unlikely but handle)
+      return `${sheetYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  return null;
+}
+
+function parseBudgetSheetXLSX(workbook: any, XLSX: any): ParsedTransaction[] {
+  const results: ParsedTransaction[] = [];
+  const seen = new Set<string>(); // deduplicate by date+category+amount+owner
+
+  for (const sheetName of workbook.SheetNames) {
+    const trimmed = sheetName.trim();
+    const sheetMatch = trimmed.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{2})$/i);
+    if (!sheetMatch) continue;
+
+    const sheetMonthNum = MONTH_ABBR[sheetMatch[1].toLowerCase()];
+    const sheetYear = 2000 + parseInt(sheetMatch[2]);
+
+    const ws = workbook.Sheets[sheetName];
+    const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as string[][];
+
+    // Header row is index 2; expense log starts at column 5 (F)
+    const headerRow = rows[2] || [];
+    // Detect column indices from header
+    const logCols = headerRow.slice(5);
+    const dateCol = 5 + logCols.findIndex((c: string) => /^date$/i.test(c.trim()));
+    const expCol = 5 + logCols.findIndex((c: string) => /^expense$/i.test(c.trim()));
+    const byCol = 5 + logCols.findIndex((c: string) => /^by$/i.test(c.trim()));
+    const amtCol = 5 + logCols.findIndex((c: string) => /^amount$/i.test(c.trim()));
+    const narrationCol = 5 + logCols.findIndex((c: string) => /^narration$/i.test(c.trim()));
+    const pmCol = 5 + logCols.findIndex((c: string) => /^payment method$/i.test(c.trim()));
+
+    if (dateCol < 5 || expCol < 5 || amtCol < 5) continue; // no valid header found
+
+    const hasOwner = byCol >= 5;
+
+    for (let i = 3; i < rows.length; i++) {
+      const row = rows[i];
+      const rawDate = (row[dateCol] || '').trim();
+      const rawCat = (row[expCol] || '').trim();
+      const rawAmt = (row[amtCol] || '').trim();
+
+      if (!rawDate || !rawCat || !rawAmt) continue;
+      if (rawDate === 'Date' || rawCat === 'Expense') continue; // repeated header
+
+      const date = parseBudgetDate(rawDate, sheetYear, sheetMonthNum);
+      if (!date) continue;
+
+      const amount = parseFloat(rawAmt.replace(/[₹,\s]/g, ''));
+      if (!amount || amount <= 0) continue;
+
+      const rawOwner = hasOwner ? (row[byCol] || '').trim() : '';
+      const owner = rawOwner === 'Khushboo' ? 'Khushboo' : rawOwner === 'Suryanshu' ? 'Suryanshu' : 'Joint';
+
+      const category = mapBudgetCategory(rawCat);
+      const narration = narrationCol >= 5 ? (row[narrationCol] || '').trim() || rawCat : rawCat;
+      const rawPM = pmCol >= 5 ? (row[pmCol] || '').trim() : '';
+      const paymentMethod = inferPaymentMethod(rawPM) || 'Other';
+
+      const dedupKey = `${date}|${rawCat}|${amount}|${owner}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+
+      results.push({
+        date,
+        account: 'Unknown',
+        amount,
+        narration,
+        category,
+        paymentMethod,
+        type: 'debit',
+        sourceFile: 'Budgeted_Actual_Expenses.xlsx',
+        owner: owner as import('../types').Owner,
+      });
+    }
+  }
+
+  return results;
 }
 
 function parseAxisCCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
@@ -341,7 +483,7 @@ export function finalizeTransactions(
   return parsed.map(p => ({
     ...p,
     id: generateId(),
-    owner,
+    owner: p.owner ?? owner,
     month: p.date.slice(0, 7),
     sourceFile,
     createdAt: now,
