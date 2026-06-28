@@ -1,3 +1,27 @@
+export type Owner = 'Suryanshu' | 'Khushboo' | 'Joint';
+export const OWNERS: Owner[] = ['Suryanshu', 'Khushboo', 'Joint'];
+
+export type AssetClass = 'FD' | 'Debt/Liquid MF' | 'Equity MF' | 'ETF' | 'Stocks' | 'Real Estate' | 'Gold' | 'NPS' | 'PPF/SSY' | 'Other';
+export const ASSET_CLASSES: AssetClass[] = ['FD', 'Debt/Liquid MF', 'Equity MF', 'ETF', 'Stocks', 'Real Estate', 'Gold', 'NPS', 'PPF/SSY', 'Other'];
+
+export interface Investment {
+  id: string;
+  owner: Owner;
+  name: string;
+  assetClass: AssetClass;
+  institution: string;
+  units?: number;
+  nav?: number;
+  principal?: number;
+  interestRate?: number;
+  maturityDate?: string;
+  currentValue: number;
+  purchaseCost?: number;
+  goal?: string;
+  updatedAt: string;
+  notes?: string;
+}
+
 export type AccountType =
   | 'HDFC Bank'
   | 'ICICI Bank'
@@ -23,6 +47,7 @@ export type TransactionType = 'debit' | 'credit';
 
 export interface Transaction {
   id: string;
+  owner: Owner;
   date: string; // ISO date string
   account: AccountType;
   amount: number;
@@ -49,6 +74,7 @@ export interface Category {
 
 export interface UploadedFile {
   id: string;
+  owner: Owner;
   name: string;
   account: AccountType;
   uploadedAt: string;
@@ -84,7 +110,8 @@ export interface InvestmentLine {
 }
 
 export interface MonthlyBudget {
-  id: string; // YYYY-MM
+  id: string; // owner:YYYY-MM
+  owner: Owner;
   month: string;
 
   // Income
@@ -142,4 +169,4 @@ export const CATEGORY_GROUPS: { group: string; categories: string[] }[] = [
   },
 ];
 
-export type ParsedTransaction = Omit<Transaction, 'id' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'>;
+export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'>;

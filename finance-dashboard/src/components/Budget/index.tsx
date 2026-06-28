@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { PlusCircle, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
-import type { MonthlyBudget, InvestmentLine } from '../../types';
+import type { MonthlyBudget, InvestmentLine, Owner } from '../../types';
 import { CATEGORY_GROUPS } from '../../types';
 import { generateId } from '../../parsers/base';
 
@@ -18,9 +18,10 @@ function pct(value: number, total: number) {
   return (value / total * 100).toFixed(1) + '%';
 }
 
-function emptyBudget(month: string): MonthlyBudget {
+function emptyBudget(owner: Owner, month: string): MonthlyBudget {
   return {
-    id: month,
+    id: `${owner}:${month}`,
+    owner,
     month,
     grossSalary: 0,
     tds: 0,
@@ -59,16 +60,17 @@ function NumInput({ value, onChange, style }: { value: number; onChange: (v: num
 }
 
 export function BudgetPage() {
-  const { transactions, saveBudget, getBudget, selectedMonth, setSelectedMonth } = useStore();
-  const [budget, setBudget] = useState<MonthlyBudget>(() => emptyBudget(selectedMonth));
+  const { transactions, saveBudget, getBudget, selectedMonth, setSelectedMonth, selectedOwner } = useStore();
+  const owner = (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as import('../../types').Owner;
+  const [budget, setBudget] = useState<MonthlyBudget>(() => emptyBudget(owner, selectedMonth));
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState(false);
 
-  // Load budget when month changes
+  // Load budget when month or owner changes
   useEffect(() => {
-    const existing = getBudget(selectedMonth);
-    setBudget(existing ? { ...existing } : emptyBudget(selectedMonth));
-  }, [selectedMonth]);
+    const existing = getBudget(owner, selectedMonth);
+    setBudget(existing ? { ...existing } : emptyBudget(owner, selectedMonth));
+  }, [selectedMonth, owner]);
 
   const patch = useCallback(<K extends keyof MonthlyBudget>(key: K, value: MonthlyBudget[K]) => {
     setBudget(prev => ({ ...prev, [key]: value }));
@@ -88,8 +90,13 @@ export function BudgetPage() {
   const totalFixed = budget.homeLoanEmi + budget.otherFixedLiabilities;
   const tab = inHand - totalInvestments - totalFixed;
 
-  // Actuals from transactions for selected month
-  const monthTxns = transactions.filter(t => t.month === selectedMonth && t.type === 'debit' && !['Salary', 'Investments', 'Credit Card Payment', 'Transfers'].includes(t.category));
+  // Actuals from transactions for selected month + owner
+  const monthTxns = transactions.filter(t =>
+    t.month === selectedMonth &&
+    t.type === 'debit' &&
+    (selectedOwner === 'All' || t.owner === selectedOwner) &&
+    !['Salary', 'Investments', 'Credit Card Payment', 'Transfers'].includes(t.category)
+  );
   const actualByCategory: Record<string, number> = {};
   for (const t of monthTxns) {
     actualByCategory[t.category] = (actualByCategory[t.category] || 0) + t.amount;

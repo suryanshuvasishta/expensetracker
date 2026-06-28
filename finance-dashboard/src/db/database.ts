@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget } from '../types';
+import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget, Investment } from '../types';
 
 export class FinanceDB extends Dexie {
   transactions!: Table<Transaction>;
@@ -7,6 +7,7 @@ export class FinanceDB extends Dexie {
   uploadedFiles!: Table<UploadedFile>;
   settings!: Table<AppSettings & { id: number }>;
   budgets!: Table<MonthlyBudget>;
+  investments!: Table<Investment>;
 
   constructor() {
     super('FinanceDashboard');
@@ -22,6 +23,14 @@ export class FinanceDB extends Dexie {
       uploadedFiles: 'id, account, month, status',
       settings: 'id',
       budgets: 'id, month',
+    });
+    this.version(3).stores({
+      transactions: 'id, date, month, account, category, paymentMethod, type, sourceFile, owner',
+      categories: 'id, name',
+      uploadedFiles: 'id, account, month, status, owner',
+      settings: 'id',
+      budgets: 'id, month, owner',
+      investments: 'id, owner, assetClass, goal',
     });
   }
 }
