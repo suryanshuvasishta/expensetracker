@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
-import { PlusCircle, Trash2, Edit2, Upload, X, Check } from 'lucide-react';
+import { useState } from 'react';
+import { PlusCircle, Trash2, Edit2, Upload, X, Check, KeyRound } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import type { Investment, AssetClass, Owner } from '../../types';
 import { ASSET_CLASSES, OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
+import { extractTextFromPDF } from '../../parsers';
 
 const ASSET_CLASS_COLORS: Record<AssetClass, string> = {
   'FD': '#facc15',
@@ -43,12 +44,16 @@ export function PortfolioPage() {
   const [editing, setEditing] = useState<Investment | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [importError, setImportError] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState<'zerodha' | 'cas' | null>(null);
+  const [casPassword, setCasPassword] = useState('');
+  const [casFile, setCasFile] = useState<File | null>(null);
 
   const ownerFilter = selectedOwner === 'All' ? null : selectedOwner as Owner;
   const visible = ownerFilter ? investments.filter(i => i.owner === ownerFilter || i.owner === 'Joint') : investments;
 
   const totalValue = visible.reduce((s, i) => s + i.currentValue, 0);
+  const totalCost = visible.reduce((s, i) => s + (i.purchaseCost ?? 0), 0);
+  const totalPnL = totalCost > 0 ? totalValue - totalCost : null;
 
   // Group by asset class
   const byClass: Record<string, Investment[]> = {};
@@ -76,53 +81,76 @@ export function PortfolioPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!confirm('Delete this holding?')) return;
     await deleteInvestment(id);
   }
 
-  // Zerodha CSV import
+  // Zerodha XLSX import
   async function handleZerodhaImport(e: React.ChangeEvent<HTMLInputElement>) {
     setImportError('');
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
+    setImporting('zerodha');
     try {
-      const text = await file.text();
       const owner = (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as Owner;
-      const parsed = parseZerodhaHoldings(text, owner);
+      const parsed = await parseZerodhaXLSX(file, owner);
       if (parsed.length === 0) {
-        setImportError('No holdings found. Make sure this is a Zerodha holdings CSV export.');
+        setImportError('No holdings found. Export your holdings from Zerodha Console → Portfolio → Holdings.');
         return;
       }
       await bulkSaveInvestments(parsed);
     } catch (err: any) {
-      setImportError(err?.message || 'Import failed');
+      setImportError(err?.message || 'Zerodha import failed');
+    } finally {
+      setImporting(null);
     }
   }
 
-  // CAMS/Kfintech CAS — basic text parsing
-  async function handleCASImport(e: React.ChangeEvent<HTMLInputElement>) {
-    setImportError('');
+  // CAS PDF import — may need password
+  async function handleCASFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
+    setImportError('');
+    setCasFile(file);
+    setCasPassword('');
+    // Try without password first
+    await runCASImport(file, '');
+  }
+
+  async function runCASImport(file: File, password: string) {
+    setImporting('cas');
+    setImportError('');
     try {
-      const text = await file.text();
       const owner = (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as Owner;
-      const parsed = parseCASStatement(text, owner);
+      const text = await extractTextFromPDF(file, password || undefined);
+      const parsed = parseCASText(text, owner);
       if (parsed.length === 0) {
-        setImportError('No mutual fund holdings found in this file. Supported: CAMS/Kfintech CAS text export.');
+        setImportError('No mutual fund holdings found. Make sure this is a CAMS or Kfintech CAS PDF.');
         return;
       }
       await bulkSaveInvestments(parsed);
+      setCasFile(null);
+      setCasPassword('');
     } catch (err: any) {
-      setImportError(err?.message || 'Import failed');
+      const msg = err?.message || String(err);
+      if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
+        setImportError('This PDF is password-protected. Enter the password below (usually PAN + date of birth).');
+        // keep casFile set so user can enter password
+      } else {
+        setImportError(msg);
+        setCasFile(null);
+      }
+    } finally {
+      setImporting(null);
     }
   }
 
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
       <Header title="Investment Portfolio" />
-      <div style={{ padding: '1.5rem', maxWidth: '1000px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div style={{ padding: '1.5rem', maxWidth: '1040px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
         {/* Summary bar */}
         <div className="card" style={{ background: 'rgba(59,130,246,0.1)', borderColor: 'rgba(59,130,246,0.3)', display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
@@ -130,6 +158,11 @@ export function PortfolioPage() {
             <div style={{ fontSize: '0.75rem', color: '#60a5fa', marginBottom: '0.25rem' }}>Total Portfolio Value</div>
             <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f1f5f9' }}>{fmt(totalValue)}</div>
             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{fmtFull(totalValue)}</div>
+            {totalPnL !== null && (
+              <div style={{ fontSize: '0.8rem', color: totalPnL >= 0 ? '#4ade80' : '#f87171', marginTop: '0.25rem' }}>
+                {totalPnL >= 0 ? '+' : ''}{fmt(totalPnL)} ({totalCost > 0 ? (totalPnL / totalCost * 100).toFixed(1) : 0}%)
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
             {ASSET_CLASSES.filter(ac => byClass[ac]?.length).map(ac => {
@@ -160,76 +193,113 @@ export function PortfolioPage() {
           </div>
         )}
 
-        {/* Import + Add buttons */}
+        {/* Import + Add */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <button className="btn-primary" onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PlusCircle size={15} /> Add Holding
           </button>
           <label style={{ cursor: 'pointer' }}>
-            <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.875rem', borderRadius: '8px', border: '1px solid #334155', fontSize: '0.875rem', color: '#94a3b8' }}>
-              <Upload size={14} /> Zerodha Holdings CSV
+            <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.875rem', borderRadius: '8px', border: '1px solid #334155', fontSize: '0.875rem', color: importing === 'zerodha' ? '#60a5fa' : '#94a3b8' }}>
+              <Upload size={14} /> {importing === 'zerodha' ? 'Importing…' : 'Zerodha Holdings XLSX'}
             </span>
-            <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleZerodhaImport} />
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleZerodhaImport} disabled={importing !== null} />
           </label>
           <label style={{ cursor: 'pointer' }}>
-            <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.875rem', borderRadius: '8px', border: '1px solid #334155', fontSize: '0.875rem', color: '#94a3b8' }}>
-              <Upload size={14} /> CAMS/Kfintech CAS
+            <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0.875rem', borderRadius: '8px', border: '1px solid #334155', fontSize: '0.875rem', color: importing === 'cas' ? '#60a5fa' : '#94a3b8' }}>
+              <Upload size={14} /> {importing === 'cas' ? 'Importing…' : 'CAMS/Kfintech CAS PDF'}
             </span>
-            <input type="file" accept=".txt,.csv" style={{ display: 'none' }} onChange={handleCASImport} ref={fileRef} />
+            <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleCASFileSelect} disabled={importing !== null} />
           </label>
-          {importError && <span style={{ fontSize: '0.8rem', color: '#f87171' }}>{importError}</span>}
         </div>
+
+        {/* CAS password prompt */}
+        {casFile && (
+          <div className="card" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <KeyRound size={16} color="#fbbf24" />
+            <span style={{ fontSize: '0.8125rem', color: '#fbbf24' }}>Password required for <strong>{casFile.name}</strong></span>
+            <input
+              type="password"
+              value={casPassword}
+              onChange={e => setCasPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runCASImport(casFile, casPassword)}
+              placeholder="e.g. PANddmmyyyy (CAMS default)"
+              style={{ flex: 1, minWidth: '200px', padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+              autoFocus
+            />
+            <button className="btn-primary" onClick={() => runCASImport(casFile, casPassword)} style={{ padding: '0.375rem 0.875rem', fontSize: '0.8125rem' }} disabled={importing !== null}>
+              {importing === 'cas' ? 'Processing…' : 'Import'}
+            </button>
+            <button onClick={() => { setCasFile(null); setImportError(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {importError && (
+          <div style={{ padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', fontSize: '0.8125rem', color: '#f87171' }}>
+            {importError}
+          </div>
+        )}
 
         {/* Holdings by asset class */}
         {ASSET_CLASSES.map(ac => {
           const items = byClass[ac];
           if (!items?.length) return null;
           const classTotal = items.reduce((s, i) => s + i.currentValue, 0);
+          const classCost = items.reduce((s, i) => s + (i.purchaseCost ?? 0), 0);
+          const classPnL = classCost > 0 ? classTotal - classCost : null;
           return (
             <div key={ac} className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', background: '#1e293b', borderBottom: '1px solid #334155' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: ASSET_CLASS_COLORS[ac] }} />
+                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: ASSET_CLASS_COLORS[ac], flexShrink: 0 }} />
                 <span style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: '#f1f5f9' }}>{ac}</span>
-                <span style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f1f5f9' }}>{fmt(classTotal)}</span>
+                <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                {classPnL !== null && (
+                  <span style={{ fontSize: '0.8rem', color: classPnL >= 0 ? '#4ade80' : '#f87171' }}>
+                    {classPnL >= 0 ? '+' : ''}{fmt(classPnL)} ({(classPnL / classCost * 100).toFixed(1)}%)
+                  </span>
+                )}
+                <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#f1f5f9' }}>{fmt(classTotal)}</span>
               </div>
               <div style={{ padding: '0.25rem 0' }}>
                 <div style={{ display: 'flex', gap: '0.5rem', padding: '0.25rem 1rem', fontSize: '0.7rem', color: '#475569' }}>
                   <span style={{ flex: 1 }}>Name</span>
-                  <span style={{ width: '100px' }}>Institution</span>
-                  <span style={{ width: '70px', textAlign: 'right' }}>Owner</span>
-                  <span style={{ width: '80px', textAlign: 'right' }}>Units</span>
-                  <span style={{ width: '80px', textAlign: 'right' }}>NAV/Price</span>
-                  <span style={{ width: '110px', textAlign: 'right' }}>Current Value</span>
-                  <span style={{ width: '60px', textAlign: 'right' }}>P&L</span>
-                  <span style={{ width: '56px' }} />
+                  <span style={{ width: '90px' }}>Institution</span>
+                  <span style={{ width: '60px', textAlign: 'right' }}>Owner</span>
+                  <span style={{ width: '80px', textAlign: 'right' }}>Units/Qty</span>
+                  <span style={{ width: '80px', textAlign: 'right' }}>Price/NAV</span>
+                  <span style={{ width: '110px', textAlign: 'right' }}>Value</span>
+                  <span style={{ width: '70px', textAlign: 'right' }}>P&L%</span>
+                  <span style={{ width: '52px' }} />
                 </div>
-                {items.map(inv => {
+                {items.sort((a, b) => b.currentValue - a.currentValue).map(inv => {
                   const pnl = inv.purchaseCost ? inv.currentValue - inv.purchaseCost : null;
                   const pnlPct = pnl !== null && inv.purchaseCost ? pnl / inv.purchaseCost * 100 : null;
                   return (
                     <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderTop: '1px solid #1e293b' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.name}</div>
-                        {inv.notes && <div style={{ fontSize: '0.7rem', color: '#475569' }}>{inv.notes}</div>}
+                        {(inv.notes || inv.goal) && (
+                          <div style={{ fontSize: '0.7rem', color: '#475569' }}>{[inv.goal, inv.notes].filter(Boolean).join(' · ')}</div>
+                        )}
                       </div>
-                      <span style={{ width: '100px', fontSize: '0.75rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.institution}</span>
-                      <span style={{ width: '70px', textAlign: 'right', fontSize: '0.7rem', color: '#64748b' }}>{inv.owner}</span>
+                      <span style={{ width: '90px', fontSize: '0.75rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.institution}</span>
+                      <span style={{ width: '60px', textAlign: 'right', fontSize: '0.7rem', color: '#64748b' }}>{inv.owner}</span>
                       <span style={{ width: '80px', textAlign: 'right', fontSize: '0.75rem', color: '#64748b' }}>
-                        {inv.units != null ? inv.units.toFixed(3) : '—'}
+                        {inv.units != null ? inv.units.toLocaleString('en-IN', { maximumFractionDigits: 3 }) : '—'}
                       </span>
                       <span style={{ width: '80px', textAlign: 'right', fontSize: '0.75rem', color: '#64748b' }}>
-                        {inv.nav != null ? '₹' + inv.nav.toFixed(2) : '—'}
+                        {inv.nav != null ? '₹' + inv.nav.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
                       </span>
-                      <span style={{ width: '110px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: '#f1f5f9' }}>{fmtFull(inv.currentValue)}</span>
-                      <span style={{ width: '60px', textAlign: 'right', fontSize: '0.75rem', color: pnl == null ? '#475569' : pnl >= 0 ? '#4ade80' : '#f87171' }}>
+                      <span style={{ width: '110px', textAlign: 'right', fontSize: '0.875rem', fontWeight: 600, color: '#f1f5f9' }}>{fmtFull(inv.currentValue)}</span>
+                      <span style={{ width: '70px', textAlign: 'right', fontSize: '0.8rem', color: pnlPct == null ? '#475569' : pnlPct >= 0 ? '#4ade80' : '#f87171' }}>
                         {pnlPct != null ? (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(1) + '%' : '—'}
                       </span>
-                      <div style={{ width: '56px', display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                        <button onClick={() => startEdit(inv)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}>
+                      <div style={{ width: '52px', display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => startEdit(inv)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }} title="Edit">
                           <Edit2 size={13} />
                         </button>
-                        <button onClick={() => handleDelete(inv.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
+                        <button onClick={() => handleDelete(inv.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }} title="Delete">
                           <Trash2 size={13} />
                         </button>
                       </div>
@@ -244,12 +314,11 @@ export function PortfolioPage() {
         {visible.length === 0 && (
           <div className="card" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
             <div style={{ fontSize: '0.9375rem', marginBottom: '0.5rem' }}>No holdings yet</div>
-            <div style={{ fontSize: '0.8125rem' }}>Add manually or import from Zerodha / CAMS</div>
+            <div style={{ fontSize: '0.8125rem' }}>Add manually, import from Zerodha (XLSX), or from CAMS/Kfintech (CAS PDF)</div>
           </div>
         )}
       </div>
 
-      {/* Edit / Add modal */}
       {showForm && editing && (
         <InvestmentForm
           inv={editing}
@@ -294,7 +363,7 @@ function InvestmentForm({ inv, onChange, onSave, onClose }: FormProps) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
           <Field label="Name">
-            <input value={inv.name} onChange={e => set('name', e.target.value)} placeholder="Fund name / Stock / FD description" style={{ width: '100%' }} />
+            <input value={inv.name} onChange={e => set('name', e.target.value)} placeholder="Fund name / Stock symbol / FD description" style={{ width: '100%' }} />
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <Field label="Asset Class">
@@ -312,19 +381,17 @@ function InvestmentForm({ inv, onChange, onSave, onClose }: FormProps) {
             <input value={inv.institution} onChange={e => set('institution', e.target.value)} placeholder="e.g. Zerodha, HDFC Bank, SBI" style={{ width: '100%' }} />
           </Field>
 
-          {/* Units + NAV for MF/ETF/Stocks */}
           {['Equity MF', 'Debt/Liquid MF', 'ETF', 'Stocks'].includes(inv.assetClass) && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <Field label="Units / Qty">
-                <input type="number" value={inv.units ?? ''} onChange={e => { set('units', parseFloat(e.target.value) || undefined); }} onBlur={recalcValue} placeholder="0.000" style={{ width: '100%' }} />
+                <input type="number" value={inv.units ?? ''} onChange={e => set('units', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.000" style={{ width: '100%' }} />
               </Field>
               <Field label={inv.assetClass === 'Stocks' || inv.assetClass === 'ETF' ? 'LTP / Price (₹)' : 'NAV (₹)'}>
-                <input type="number" value={inv.nav ?? ''} onChange={e => { set('nav', parseFloat(e.target.value) || undefined); }} onBlur={recalcValue} placeholder="0.00" style={{ width: '100%' }} />
+                <input type="number" value={inv.nav ?? ''} onChange={e => set('nav', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.00" style={{ width: '100%' }} />
               </Field>
             </div>
           )}
 
-          {/* FD fields */}
           {inv.assetClass === 'FD' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <Field label="Principal (₹)">
@@ -383,119 +450,160 @@ function Field({ label, children, required }: { label: string; children: React.R
   );
 }
 
-function parseZerodhaHoldings(csv: string, owner: Owner): Investment[] {
-  const lines = csv.split('\n').map(l => l.trim()).filter(Boolean);
-  const headerIdx = lines.findIndex(l => l.toLowerCase().includes('instrument') && l.toLowerCase().includes('qty'));
+// Zerodha XLSX: header row has "Symbol", "ISIN", "Quantity Available", "Average Price", "Previous Closing Price"
+async function parseZerodhaXLSX(file: File, owner: Owner): Promise<Investment[]> {
+  const XLSX = await import('xlsx');
+  const arrayBuffer = await file.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellText: true, cellDates: false });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
+
+  // Find header row: must have "Symbol" and ("Quantity" or "Qty")
+  const headerIdx = rows.findIndex(r =>
+    r.some(c => c.trim() === 'Symbol') && r.some(c => /quantity|qty/i.test(c))
+  );
   if (headerIdx < 0) return [];
 
-  const header = lines[headerIdx].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
-  const get = (row: string[], col: string) => {
-    const idx = header.findIndex(h => h.includes(col));
-    return idx >= 0 ? (row[idx] || '').replace(/"/g, '').trim() : '';
-  };
+  const header = rows[headerIdx].map(c => c.trim().toLowerCase());
+  const col = (name: string) => header.findIndex(h => h.includes(name.toLowerCase()));
+
+  const symbolCol = col('symbol');
+  const isinCol = col('isin');
+  const sectorCol = col('sector');
+  // Total quantity = available + discrepant + long term + pledged margin + pledged loan
+  const qtyAvailCol = col('quantity available');
+  const qtyLTCol = col('quantity long term');
+  const qtyPledgeMCol = col('quantity pledged (margin)');
+  const qtyPledgeLCol = col('quantity pledged (loan)');
+  const avgPriceCol = col('average price');
+  const ltpCol = col('previous closing price');
 
   const investments: Investment[] = [];
   const now = new Date().toISOString();
 
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const row = lines[i].split(',');
-    const name = get(row, 'instrument');
-    if (!name || name.toLowerCase() === 'total') continue;
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const symbol = (row[symbolCol] || '').trim();
+    if (!symbol || /total|summary/i.test(symbol)) continue;
 
-    const qty = parseFloat(get(row, 'qty')) || 0;
-    const ltp = parseFloat(get(row, 'ltp')) || parseFloat(get(row, 'cur val')) / (qty || 1);
-    const curVal = parseFloat(get(row, 'cur val')) || qty * ltp;
-    const avgCost = parseFloat(get(row, 'avg cost')) || 0;
+    const parseN = (idx: number) => idx >= 0 ? parseFloat((row[idx] || '').replace(/,/g, '')) || 0 : 0;
 
-    if (curVal <= 0 && qty <= 0) continue;
+    const qtyAvail = parseN(qtyAvailCol);
+    const qtyLT = parseN(qtyLTCol);
+    const qtyPledgeM = parseN(qtyPledgeMCol);
+    const qtyPledgeL = parseN(qtyPledgeLCol);
+    const totalQty = qtyAvail + qtyLT + qtyPledgeM + qtyPledgeL;
 
-    // Classify as ETF if name ends with common ETF suffixes, else Stocks
-    const isETF = /ETF|BEES|NIFTY|GOLD|SILVER|CPSE/i.test(name);
+    const avgPrice = parseN(avgPriceCol);
+    const ltp = parseN(ltpCol);
+    const currentValue = ltp > 0 ? totalQty * ltp : totalQty * avgPrice;
+    const purchaseCost = avgPrice > 0 ? totalQty * avgPrice : undefined;
+
+    if (totalQty <= 0 && currentValue <= 0) continue;
+
+    const sector = sectorCol >= 0 ? (row[sectorCol] || '').trim() : '';
+    const isETF = sector === 'ETF' || /ETF|BEES|NIFTY|GOLD|SILVER|CPSE|LIQUID/i.test(symbol);
 
     investments.push({
       id: generateId(),
       owner,
-      name,
+      name: symbol,
       assetClass: isETF ? 'ETF' : 'Stocks',
       institution: 'Zerodha',
-      units: qty,
-      nav: ltp,
-      currentValue: curVal || qty * ltp,
-      purchaseCost: avgCost * qty || undefined,
+      units: totalQty,
+      nav: ltp || undefined,
+      currentValue: currentValue || purchaseCost || 0,
+      purchaseCost,
       updatedAt: now,
+      notes: isinCol >= 0 ? (row[isinCol] || '').trim() || undefined : undefined,
     });
   }
 
   return investments;
 }
 
-function parseCASStatement(text: string, owner: Owner): Investment[] {
+// CAMS / Kfintech CAS PDF text parser
+function parseCASText(text: string, owner: Owner): Investment[] {
   const investments: Investment[] = [];
   const now = new Date().toISOString();
-  const lines = text.split('\n').map(l => l.trim());
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
   let currentFolio = '';
-  let currentAMC = '';
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // AMC line detection
-    if (/Folio No\s*:/i.test(line)) {
-      currentFolio = (line.match(/Folio No\s*:\s*([^\s]+)/i) || [])[1] || '';
+    // Track folio
+    const folioMatch = line.match(/Folio\s*(?:No\.?|Number)?\s*[:\-]\s*([^\s/]+)/i);
+    if (folioMatch) currentFolio = folioMatch[1];
+
+    // CAS closing balance line:
+    // "Closing Unit Balance: 1,234.567   NAV on 28-Jun-2026 : ₹456.78"
+    // "Closing Balance: 1234.567 unit(s)   Valuation on ...: ₹56789.00"
+    const closingMatch = line.match(/closing\s+(?:unit\s+)?balance[:\s]+([\d,]+\.?\d*)/i);
+    if (!closingMatch) continue;
+
+    const units = parseFloat(closingMatch[1].replace(/,/g, ''));
+    if (units <= 0) continue;
+
+    // NAV on same line or next few lines
+    let nav: number | undefined;
+    let currentValue = 0;
+
+    const navOnLine = line.match(/NAV\s+(?:on\s+[\d\-A-Za-z,]+\s*)?[:\-]?\s*[₹Rs.]?\s*([\d,]+\.?\d*)/i) ||
+                      line.match(/[₹Rs.]\s*([\d,]+\.?\d*)\s*(?:per\s+unit)?/i);
+    if (navOnLine) nav = parseFloat(navOnLine[1].replace(/,/g, ''));
+
+    // Valuation/market value on same or next line
+    const valueOnLine = line.match(/[Vv]aluation[^₹₹]*[₹Rs.]\s*([\d,]+\.?\d*)/);
+    if (valueOnLine) currentValue = parseFloat(valueOnLine[1].replace(/,/g, ''));
+
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      const next = lines[j];
+      if (!nav) {
+        const m = next.match(/NAV\s+(?:on\s+[\d\-A-Za-z,]+\s*)?[:\-]?\s*[₹Rs.]?\s*([\d,]+\.?\d*)/i);
+        if (m) nav = parseFloat(m[1].replace(/,/g, ''));
+      }
+      if (!currentValue) {
+        const m = next.match(/[Vv]aluation[^₹]*[₹Rs.]\s*([\d,]+\.?\d*)/) ||
+                  next.match(/[Mm]arket\s+[Vv]alue[^₹]*[₹Rs.]\s*([\d,]+\.?\d*)/);
+        if (m) currentValue = parseFloat(m[1].replace(/,/g, ''));
+      }
+      if (nav && currentValue) break;
     }
 
-    // Match fund name lines (typically before balance line)
-    // Balance lines: "Closing Unit Balance: 123.456" or "Units: 123.456  NAV: 456.78"
-    const balanceLine = line.match(/closing\s+unit\s+balance[:\s]+([\d,]+\.?\d*)/i) ||
-                        line.match(/units?\s*[:\s]+([\d,]+\.?\d*)\s+.*NAV[:\s]+([\d,]+\.?\d*)/i);
+    if (!currentValue && nav) currentValue = units * nav;
 
-    if (balanceLine) {
-      // Look back for fund name
-      let fundName = '';
-      for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
-        const prev = lines[j];
-        if (prev && !/Folio|PAN|Email|Mobile|KYC|Date|Opening|Closing|Transaction|Dividend/i.test(prev) && prev.length > 5) {
-          fundName = prev;
-          break;
-        }
-      }
-
-      const units = parseFloat(balanceLine[1].replace(/,/g, ''));
-      const nav = balanceLine[2] ? parseFloat(balanceLine[2].replace(/,/g, '')) : 0;
-
-      // Look ahead for NAV if not found
-      let finalNAV = nav;
-      if (!finalNAV) {
-        for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
-          const navMatch = lines[j].match(/NAV[:\s]+([\d,]+\.?\d*)/i);
-          if (navMatch) { finalNAV = parseFloat(navMatch[1].replace(/,/g, '')); break; }
-        }
-      }
-
-      if (fundName && units > 0) {
-        const isDebt = /liquid|overnight|money market|gilt|bond|income|debt|fixed maturity|short term|ultra short/i.test(fundName);
-        const assetClass: AssetClass = isDebt ? 'Debt/Liquid MF' : 'Equity MF';
-
-        investments.push({
-          id: generateId(),
-          owner,
-          name: fundName,
-          assetClass,
-          institution: currentAMC || 'MF',
-          units,
-          nav: finalNAV || undefined,
-          currentValue: finalNAV ? units * finalNAV : 0,
-          updatedAt: now,
-          notes: currentFolio ? `Folio: ${currentFolio}` : undefined,
-        });
+    // Look back for fund name (skip metadata lines)
+    let fundName = '';
+    for (let j = i - 1; j >= Math.max(0, i - 8); j--) {
+      const prev = lines[j];
+      if (!prev || prev.length < 5) continue;
+      if (/folio|pan|email|mobile|kyc|date|opening|transaction|dividend|isin|registrar|advisor|nominee|^[₹\d]/i.test(prev)) continue;
+      // Fund names are typically long and contain "Fund" or "-"
+      if (prev.length > 10) {
+        fundName = prev;
+        break;
       }
     }
 
-    // Track AMC name
-    if (/\bAMC\b|Mutual Fund|Asset Management/i.test(line) && line.length < 80) {
-      currentAMC = line.replace(/[-=*]+/g, '').trim();
-    }
+    if (!fundName || currentValue <= 0) continue;
+
+    const isDebt = /liquid|overnight|money\s*market|gilt|bond|income|debt|fixed\s*maturity|short\s*term|ultra\s*short|low\s*dur/i.test(fundName);
+    const assetClass: AssetClass = isDebt ? 'Debt/Liquid MF' : 'Equity MF';
+
+    investments.push({
+      id: generateId(),
+      owner,
+      name: fundName.replace(/\s+/g, ' '),
+      assetClass,
+      institution: 'MF',
+      units,
+      nav,
+      currentValue,
+      updatedAt: now,
+      notes: currentFolio ? `Folio: ${currentFolio}` : undefined,
+    });
   }
 
   return investments;
