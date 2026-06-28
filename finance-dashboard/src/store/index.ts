@@ -2,13 +2,16 @@ import { create } from 'zustand';
 import { db, getCategories } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Owner } from '../types';
 
 interface AppState {
   transactions: Transaction[];
   categories: Category[];
   uploadedFiles: UploadedFile[];
+  budgets: MonthlyBudget[];
+  investments: Investment[];
   selectedMonth: string; // YYYY-MM
+  selectedOwner: Owner | 'All'; // persona filter
   isLoading: boolean;
   error: string | null;
 
@@ -18,29 +21,40 @@ interface AppState {
   deleteTransaction: (id: string) => Promise<void>;
   deleteBySourceFile: (sourceFile: string) => Promise<void>;
   setSelectedMonth: (month: string) => void;
+  setSelectedOwner: (owner: Owner | 'All') => void;
   setCategories: (cats: Category[]) => Promise<void>;
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
   rerunCorrelation: () => Promise<void>;
+  saveBudget: (budget: MonthlyBudget) => Promise<void>;
+  getBudget: (owner: Owner, month: string) => MonthlyBudget | undefined;
+  saveInvestment: (inv: Investment) => Promise<void>;
+  deleteInvestment: (id: string) => Promise<void>;
+  bulkSaveInvestments: (invs: Investment[]) => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
   transactions: [],
   categories: [],
   uploadedFiles: [],
+  budgets: [],
+  investments: [],
   selectedMonth: new Date().toISOString().slice(0, 7),
+  selectedOwner: 'Suryanshu',
   isLoading: false,
   error: null,
 
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles] = await Promise.all([
+      const [transactions, categories, uploadedFiles, budgets, investments] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
         db.uploadedFiles.toArray(),
+        db.budgets.toArray(),
+        db.investments.toArray(),
       ]);
-      set({ transactions, categories, uploadedFiles, isLoading: false });
+      set({ transactions, categories, uploadedFiles, budgets, investments, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
@@ -88,6 +102,10 @@ export const useStore = create<AppState>((set, get) => ({
     set({ selectedMonth: month });
   },
 
+  setSelectedOwner(owner) {
+    set({ selectedOwner: owner });
+  },
+
   async setCategories(cats: Category[]) {
     await db.categories.clear();
     await db.categories.bulkPut(cats);
@@ -112,5 +130,36 @@ export const useStore = create<AppState>((set, get) => ({
     const correlated = correlateTransactions(categorized);
     await db.transactions.bulkPut(correlated);
     set({ transactions: correlated });
+  },
+
+  async saveBudget(budget: MonthlyBudget) {
+    await db.budgets.put(budget);
+    set(state => ({
+      budgets: [...state.budgets.filter(b => b.id !== budget.id), budget],
+    }));
+  },
+
+  getBudget(owner: Owner, month: string) {
+    return get().budgets.find(b => b.owner === owner && b.month === month);
+  },
+
+  async saveInvestment(inv: Investment) {
+    await db.investments.put(inv);
+    set(state => ({
+      investments: [...state.investments.filter(i => i.id !== inv.id), inv],
+    }));
+  },
+
+  async deleteInvestment(id: string) {
+    await db.investments.delete(id);
+    set(state => ({ investments: state.investments.filter(i => i.id !== id) }));
+  },
+
+  async bulkSaveInvestments(invs: Investment[]) {
+    await db.investments.bulkPut(invs);
+    const ids = new Set(invs.map(i => i.id));
+    set(state => ({
+      investments: [...state.investments.filter(i => !ids.has(i.id)), ...invs],
+    }));
   },
 }));

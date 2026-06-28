@@ -4,7 +4,8 @@ import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2 } from 'luc
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { extractTextFromPDF, extractTransactionsFromXLS, parseStatement, finalizeTransactions, detectAccount } from '../../parsers';
-import type { AccountType, UploadedFile } from '../../types';
+import type { AccountType, UploadedFile, Owner } from '../../types';
+import { OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
 
 const ACCOUNT_OPTIONS: AccountType[] = [
@@ -15,6 +16,7 @@ interface FileState {
   file: File;
   id: string;
   account: AccountType | 'Unknown';
+  owner: Owner;
   status: 'pending' | 'processing' | 'done' | 'error';
   count: number;
   error?: string;
@@ -22,7 +24,7 @@ interface FileState {
 }
 
 export function UploadPage() {
-  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile } = useStore();
+  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner } = useStore();
   const [fileStates, setFileStates] = useState<FileState[]>([]);
   const [processing, setProcessing] = useState(false);
 
@@ -31,6 +33,7 @@ export function UploadPage() {
       file,
       id: generateId(),
       account: 'Unknown',
+      owner: (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as Owner,
       status: 'pending',
       count: 0,
     }));
@@ -72,11 +75,12 @@ export function UploadPage() {
         return;
       }
 
-      const finalized = finalizeTransactions(parsed, fs.file.name);
+      const finalized = finalizeTransactions(parsed, fs.file.name, fs.owner);
       await addTransactions(finalized);
 
       const uploadRecord: UploadedFile = {
         id: fs.id,
+        owner: fs.owner,
         name: fs.file.name,
         account: account as AccountType,
         uploadedAt: new Date().toISOString(),
@@ -155,6 +159,7 @@ export function UploadPage() {
                 key={fs.id}
                 fs={fs}
                 onAccountChange={account => updateFileState(fs.id, { account })}
+                onOwnerChange={owner => updateFileState(fs.id, { owner })}
                 onPasswordChange={password => updateFileState(fs.id, { password })}
                 onProcess={() => processFile(fs)}
                 onRemove={() => setFileStates(prev => prev.filter(f => f.id !== fs.id))}
@@ -207,12 +212,13 @@ export function UploadPage() {
 interface FileRowProps {
   fs: FileState;
   onAccountChange: (a: AccountType) => void;
+  onOwnerChange: (o: Owner) => void;
   onPasswordChange: (p: string) => void;
   onProcess: () => void;
   onRemove: () => void;
 }
 
-function FileRow({ fs, onAccountChange, onPasswordChange, onProcess, onRemove }: FileRowProps) {
+function FileRow({ fs, onAccountChange, onOwnerChange, onPasswordChange, onProcess, onRemove }: FileRowProps) {
   const [showPassword, setShowPassword] = useState(false);
 
   const statusIcon = {
@@ -228,9 +234,17 @@ function FileRow({ fs, onAccountChange, onPasswordChange, onProcess, onRemove }:
         {statusIcon}
         <span style={{ flex: 1, fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fs.file.name}</span>
         <select
+          value={fs.owner}
+          onChange={e => onOwnerChange(e.target.value as Owner)}
+          style={{ width: '110px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+          disabled={fs.status === 'processing' || fs.status === 'done'}
+        >
+          {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <select
           value={fs.account}
           onChange={e => onAccountChange(e.target.value as AccountType)}
-          style={{ width: '180px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+          style={{ width: '170px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
           disabled={fs.status === 'processing' || fs.status === 'done'}
         >
           <option value="Unknown">Auto-detect</option>

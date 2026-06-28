@@ -1,4 +1,6 @@
-import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet, PieChart } from 'lucide-react';
+import { useStore } from '../../store';
+import type { Owner } from '../../types';
 
 interface Props {
   currentPage: string;
@@ -9,13 +11,23 @@ interface Props {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'budget', label: 'Budget', icon: Wallet },
+  { id: 'portfolio', label: 'Portfolio', icon: PieChart },
   { id: 'transactions', label: 'Transactions', icon: List },
   { id: 'upload', label: 'Upload', icon: Upload },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+const OWNER_LABELS: { value: Owner | 'All'; label: string; short: string }[] = [
+  { value: 'Suryanshu', label: 'Suryanshu', short: 'S' },
+  { value: 'Khushboo', label: 'Khushboo', short: 'K' },
+  { value: 'All', label: 'Both', short: '⊕' },
+];
+
 export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props) {
+  const { selectedOwner, setSelectedOwner } = useStore();
+
   return (
     <aside
       style={{
@@ -45,6 +57,40 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
+      </div>
+
+      {/* Persona switcher */}
+      <div style={{ padding: '0.625rem 0.5rem', borderBottom: '1px solid #334155' }}>
+        {collapsed ? (
+          <button
+            onClick={() => {
+              const idx = OWNER_LABELS.findIndex(o => o.value === selectedOwner);
+              setSelectedOwner(OWNER_LABELS[(idx + 1) % OWNER_LABELS.length].value as Owner | 'All');
+            }}
+            title={OWNER_LABELS.find(o => o.value === selectedOwner)?.label}
+            style={{ width: '100%', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '8px', color: '#60a5fa', cursor: 'pointer', padding: '0.375rem', fontSize: '0.875rem', fontWeight: 700 }}
+          >
+            {OWNER_LABELS.find(o => o.value === selectedOwner)?.short}
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {OWNER_LABELS.map(o => (
+              <button
+                key={o.value}
+                onClick={() => setSelectedOwner(o.value as Owner | 'All')}
+                style={{
+                  flex: 1, padding: '0.25rem', fontSize: '0.7rem', fontWeight: selectedOwner === o.value ? 700 : 400,
+                  borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  background: selectedOwner === o.value ? 'rgba(59,130,246,0.2)' : 'transparent',
+                  color: selectedOwner === o.value ? '#60a5fa' : '#64748b',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <nav style={{ padding: '0.75rem 0.5rem', flex: 1 }}>

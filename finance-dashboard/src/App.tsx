@@ -5,6 +5,8 @@ import { TransactionsPage } from './components/Transactions';
 import { UploadPage } from './components/Upload';
 import { TrendsPage } from './components/Trends';
 import { SettingsPage } from './components/Settings';
+import { BudgetPage } from './components/Budget';
+import { PortfolioPage } from './components/Portfolio';
 import { useStore } from './store';
 
 export default function App() {
@@ -33,6 +35,8 @@ export default function App() {
       case 'transactions': return <TransactionsPage />;
       case 'upload': return <UploadPage />;
       case 'trends': return <TrendsPage />;
+      case 'budget': return <BudgetPage />;
+      case 'portfolio': return <PortfolioPage />;
       case 'settings': return <SettingsPage />;
       default: return <Dashboard />;
     }

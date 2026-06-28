@@ -334,12 +334,14 @@ function parseGeneric(text: string, filename: string): ParsedTransaction[] {
 
 export function finalizeTransactions(
   parsed: ParsedTransaction[],
-  sourceFile: string
+  sourceFile: string,
+  owner: import('../types').Owner = 'Suryanshu'
 ): import('../types').Transaction[] {
   const now = new Date().toISOString();
   return parsed.map(p => ({
     ...p,
     id: generateId(),
+    owner,
     month: p.date.slice(0, 7),
     sourceFile,
     createdAt: now,
