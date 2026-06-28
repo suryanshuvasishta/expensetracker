@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, Download, Link2, Edit2, Check, X } from 'lucide-react';
+import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
+import { generateId } from '../../parsers/base';
 import type { Transaction } from '../../types';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -16,7 +17,7 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, updateTransaction } = useStore();
+  const { transactions, categories, selectedMonth, updateTransaction, saveCategoryRule, applyRuleToAll } = useStore();
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
@@ -26,6 +27,10 @@ export function TransactionsPage() {
   const [editCategory, setEditCategory] = useState('');
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+
+  // Learn prompt state
+  const [learnPrompt, setLearnPrompt] = useState<{ narration: string; category: string; keyword: string } | null>(null);
+  const [learnApplied, setLearnApplied] = useState<number | null>(null);
 
   const monthTxns = transactions.filter(t => t.month === selectedMonth);
 
@@ -49,11 +54,28 @@ export function TransactionsPage() {
   function startEdit(t: Transaction) {
     setEditingId(t.id);
     setEditCategory(t.category);
+    setLearnPrompt(null);
+    setLearnApplied(null);
   }
 
-  async function saveEdit(id: string) {
-    await updateTransaction(id, { category: editCategory });
+  async function saveEdit(t: Transaction) {
+    if (editCategory === t.category) { setEditingId(null); return; }
+    await updateTransaction(t.id, { category: editCategory });
     setEditingId(null);
+    // Suggest a keyword from the narration (first significant word)
+    const words = t.narration.split(/\s+/).filter(w => w.length > 3 && !/^\d+$/.test(w));
+    const suggested = words[0] || t.narration.slice(0, 12);
+    setLearnPrompt({ narration: t.narration, category: editCategory, keyword: suggested });
+    setLearnApplied(null);
+  }
+
+  async function handleLearn(keyword: string, category: string, save: boolean) {
+    if (save) {
+      await saveCategoryRule({ id: generateId(), keyword, category, createdAt: new Date().toISOString() });
+      const count = await applyRuleToAll(keyword, category);
+      setLearnApplied(count);
+    }
+    setTimeout(() => { setLearnPrompt(null); setLearnApplied(null); }, save ? 3000 : 0);
   }
 
   function exportCSV() {
@@ -165,7 +187,7 @@ export function TransactionsPage() {
                         <select value={editCategory} onChange={e => setEditCategory(e.target.value)} style={{ width: '140px', padding: '2px 4px', fontSize: '0.75rem' }}>
                           {catNames.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                        <button onClick={() => saveEdit(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4ade80' }}><Check size={14} /></button>
+                        <button onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4ade80' }}><Check size={14} /></button>
                         <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><X size={14} /></button>
                       </div>
                     ) : (
@@ -183,6 +205,18 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Learn prompt */}
+        {learnPrompt && (
+          <LearnPrompt
+            narration={learnPrompt.narration}
+            category={learnPrompt.category}
+            keyword={learnPrompt.keyword}
+            appliedCount={learnApplied}
+            onConfirm={(kw) => handleLearn(kw, learnPrompt.category, true)}
+            onDismiss={() => { setLearnPrompt(null); setLearnApplied(null); }}
+          />
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (
@@ -241,5 +275,54 @@ function CategoryBadge({ category, categories }: { category: string; categories:
     }}>
       {category || 'Uncategorized'}
     </span>
+  );
+}
+
+function LearnPrompt({
+  narration, category, keyword, appliedCount, onConfirm, onDismiss,
+}: {
+  narration: string; category: string; keyword: string; appliedCount: number | null;
+  onConfirm: (kw: string) => void; onDismiss: () => void;
+}) {
+  const [kw, setKw] = useState(keyword);
+
+  if (appliedCount !== null) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', fontSize: '0.8125rem', color: '#4ade80' }}>
+        <Sparkles size={15} />
+        Rule saved! Applied <strong style={{ margin: '0 2px' }}>{appliedCount}</strong> more transactions → <strong style={{ margin: '0 2px' }}>{category}</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.625rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', fontSize: '0.8125rem' }}>
+      <Sparkles size={15} style={{ color: '#60a5fa', flexShrink: 0 }} />
+      <span style={{ color: 'var(--text-muted)' }}>Apply <strong style={{ color: 'var(--text-primary)', margin: '0 2px' }}>{category}</strong> to all transactions containing:</span>
+      <input
+        value={kw}
+        onChange={e => setKw(e.target.value)}
+        style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid #334155', background: 'var(--bg-main)', color: 'var(--text-primary)', width: '180px' }}
+        placeholder="keyword"
+      />
+      <button
+        className="btn-primary"
+        onClick={() => onConfirm(kw)}
+        disabled={!kw.trim()}
+        style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}
+      >
+        Save rule &amp; apply
+      </button>
+      <button
+        className="btn-ghost"
+        onClick={onDismiss}
+        style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}
+      >
+        Skip
+      </button>
+      <span style={{ fontSize: '0.7rem', color: '#475569', flex: '0 0 100%', marginTop: '-0.25rem' }}>
+        Narration: <em>{narration.slice(0, 60)}{narration.length > 60 ? '…' : ''}</em>
+      </span>
+    </div>
   );
 }

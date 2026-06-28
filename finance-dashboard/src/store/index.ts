@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { db, getCategories } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner, CategoryRule } from '../types';
 
 interface AppState {
   transactions: Transaction[];
@@ -11,6 +11,7 @@ interface AppState {
   budgets: MonthlyBudget[];
   investments: Investment[];
   liabilities: Liability[];
+  categoryRules: CategoryRule[];
   selectedMonth: string; // YYYY-MM
   selectedOwner: Owner | 'All'; // persona filter
   theme: 'dark' | 'light';
@@ -36,6 +37,9 @@ interface AppState {
   bulkSaveInvestments: (invs: Investment[]) => Promise<void>;
   saveLiability: (l: Liability) => Promise<void>;
   deleteLiability: (id: string) => Promise<void>;
+  saveCategoryRule: (rule: CategoryRule) => Promise<void>;
+  deleteCategoryRule: (id: string) => Promise<void>;
+  applyRuleToAll: (keyword: string, category: string) => Promise<number>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -45,6 +49,7 @@ export const useStore = create<AppState>((set, get) => ({
   budgets: [],
   investments: [],
   liabilities: [],
+  categoryRules: [],
   selectedMonth: new Date().toISOString().slice(0, 7),
   selectedOwner: 'Suryanshu',
   theme: (localStorage.getItem('theme') as 'dark' | 'light') || 'dark',
@@ -54,25 +59,26 @@ export const useStore = create<AppState>((set, get) => ({
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles, budgets, investments, liabilities] = await Promise.all([
+      const [transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
         db.uploadedFiles.toArray(),
         db.budgets.toArray(),
         db.investments.toArray(),
         db.liabilities.toArray(),
+        db.categoryRules.toArray(),
       ]);
-      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, isLoading: false });
+      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
   },
 
   async addTransactions(newTxns: Transaction[]) {
-    const { categories, transactions } = get();
+    const { categories, transactions, categoryRules } = get();
 
     // Categorize
-    const categorized = categorizeTransactions(newTxns, categories);
+    const categorized = categorizeTransactions(newTxns, categories, categoryRules);
 
     // Merge with existing and re-run correlation
     const allTxns = [...transactions, ...categorized];
@@ -138,8 +144,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async rerunCorrelation() {
-    const { transactions, categories } = get();
-    const categorized = categorizeTransactions(transactions, categories);
+    const { transactions, categories, categoryRules } = get();
+    const categorized = categorizeTransactions(transactions, categories, categoryRules);
     const correlated = correlateTransactions(categorized);
     await db.transactions.bulkPut(correlated);
     set({ transactions: correlated });
@@ -186,5 +192,35 @@ export const useStore = create<AppState>((set, get) => ({
   async deleteLiability(id: string) {
     await db.liabilities.delete(id);
     set(state => ({ liabilities: state.liabilities.filter(x => x.id !== id) }));
+  },
+
+  async saveCategoryRule(rule: CategoryRule) {
+    await db.categoryRules.put(rule);
+    set(state => ({
+      categoryRules: [...state.categoryRules.filter(r => r.id !== rule.id), rule],
+    }));
+  },
+
+  async deleteCategoryRule(id: string) {
+    await db.categoryRules.delete(id);
+    set(state => ({ categoryRules: state.categoryRules.filter(r => r.id !== id) }));
+  },
+
+  async applyRuleToAll(keyword: string, category: string) {
+    const lower = keyword.toLowerCase();
+    const { transactions } = get();
+    const matches = transactions.filter(t =>
+      t.narration.toLowerCase().includes(lower) && t.category !== category
+    );
+    if (matches.length === 0) return 0;
+    const patched = matches.map(t => ({ ...t, category }));
+    await db.transactions.bulkPut(patched);
+    set(state => ({
+      transactions: state.transactions.map(t => {
+        const p = patched.find(x => x.id === t.id);
+        return p ? p : t;
+      }),
+    }));
+    return matches.length;
   },
 }));

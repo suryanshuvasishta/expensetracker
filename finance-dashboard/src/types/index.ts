@@ -171,6 +171,13 @@ export const CATEGORY_GROUPS: { group: string; categories: string[] }[] = [
 
 export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'> & { owner?: Owner };
 
+export interface CategoryRule {
+  id: string;
+  keyword: string;    // substring to match (case-insensitive) in narration
+  category: string;  // display name to assign
+  createdAt: string;
+}
+
 export type LiabilityType = 'Home Loan' | 'Car Loan' | 'Personal Loan' | 'Credit Card' | 'Other';
 
 export interface Liability {
