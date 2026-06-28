@@ -9,8 +9,8 @@ export function parseIndianDate(dateStr: string): string | null {
   if (!dateStr) return null;
   dateStr = dateStr.trim();
 
-  // DD/MM/YYYY or DD-MM-YYYY
-  const ddmmyyyy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const ddmmyyyy = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (ddmmyyyy) {
     const [, d, m, y] = ddmmyyyy;
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;

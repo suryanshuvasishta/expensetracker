@@ -34,10 +34,49 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => ('str' in item ? item.str : ''))
-      .join(' ');
-    fullText += pageText + '\n';
+
+    // Group text items by y-coordinate to reconstruct table rows.
+    // PDF coordinates are bottom-up, so sort y descending (top of page first).
+    const items = textContent.items
+      .filter((item: any) => 'str' in item && item.str.trim())
+      .map((item: any) => ({
+        str: item.str as string,
+        x: item.transform[4] as number,
+        y: item.transform[5] as number,
+        w: (item.width ?? 0) as number,
+      }))
+      .sort((a, b) => b.y - a.y || a.x - b.x);
+
+    // Cluster into lines by y proximity
+    const Y_TOLERANCE = 4;
+    const lines: { y: number; items: { str: string; x: number; w: number }[] }[] = [];
+
+    for (const item of items) {
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.y - item.y) <= Y_TOLERANCE) {
+        last.items.push(item);
+      } else {
+        lines.push({ y: item.y, items: [item] });
+      }
+    }
+
+    // Build text: use tabs between cells when there's a significant x-gap
+    for (const line of lines) {
+      const sorted = line.items.sort((a, b) => a.x - b.x);
+      let lineText = '';
+      let prevEndX = -1;
+
+      for (const item of sorted) {
+        if (prevEndX >= 0) {
+          const gap = item.x - prevEndX;
+          lineText += gap > 15 ? '\t' : ' ';
+        }
+        lineText += item.str;
+        prevEndX = item.x + (item.w > 0 ? item.w : item.str.length * 5);
+      }
+
+      fullText += lineText.trim() + '\n';
+    }
   }
 
   return fullText;
