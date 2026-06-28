@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { generateId } from '../../parsers/base';
 import type { Transaction } from '../../types';
+import { CATEGORY_GROUPS } from '../../types';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -49,7 +50,7 @@ export function TransactionsPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
   const accounts = [...new Set(transactions.map(t => t.account))];
-  const catNames = [...new Set(categories.map(c => c.name))].sort();
+  const SYSTEM_CATS = ['Salary', 'Investments', 'Credit Card Payment', 'Transfers'];
 
   function startEdit(t: Transaction) {
     setEditingId(t.id);
@@ -62,9 +63,10 @@ export function TransactionsPage() {
     if (editCategory === t.category) { setEditingId(null); return; }
     await updateTransaction(t.id, { category: editCategory });
     setEditingId(null);
-    // Suggest a keyword from the narration (first significant word)
-    const words = t.narration.split(/\s+/).filter(w => w.length > 3 && !/^\d+$/.test(w));
-    const suggested = words[0] || t.narration.slice(0, 12);
+    // Suggest a keyword: first non-numeric word of 4+ chars, skip common filler
+    const FILLER = new Set(['upi/', 'neft', 'imps', 'rtgs', 'from', 'with', 'payment', 'transfer', 'debit', 'credit']);
+    const words = t.narration.split(/[\s\/\-]+/).filter(w => w.length >= 4 && !/^\d+$/.test(w) && !FILLER.has(w.toLowerCase()));
+    const suggested = words[0]?.toUpperCase() || t.narration.slice(0, 12);
     setLearnPrompt({ narration: t.narration, category: editCategory, keyword: suggested });
     setLearnApplied(null);
   }
@@ -130,7 +132,14 @@ export function TransactionsPage() {
             </select>
             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ width: 'auto' }}>
               <option value="">All Categories</option>
-              {catNames.map(c => <option key={c} value={c}>{c}</option>)}
+              {CATEGORY_GROUPS.map(({ group, categories: cats }) => (
+                <optgroup key={group} label={group}>
+                  {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                </optgroup>
+              ))}
+              <optgroup label="System">
+                {SYSTEM_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
             </select>
             <button className="btn-ghost" onClick={() => { setFilterAccount(''); setFilterType(''); setFilterCategory(''); setSearch(''); }}>
               Clear filters
@@ -184,8 +193,15 @@ export function TransactionsPage() {
                   <td>
                     {editingId === t.id ? (
                       <div style={{ display: 'flex', gap: '4px' }}>
-                        <select value={editCategory} onChange={e => setEditCategory(e.target.value)} style={{ width: '140px', padding: '2px 4px', fontSize: '0.75rem' }}>
-                          {catNames.map(c => <option key={c} value={c}>{c}</option>)}
+                        <select value={editCategory} onChange={e => setEditCategory(e.target.value)} style={{ width: '170px', padding: '2px 4px', fontSize: '0.75rem' }}>
+                          {CATEGORY_GROUPS.map(({ group, categories: cats }) => (
+                            <optgroup key={group} label={group}>
+                              {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                            </optgroup>
+                          ))}
+                          <optgroup label="System">
+                            {SYSTEM_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </optgroup>
                         </select>
                         <button onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4ade80' }}><Check size={14} /></button>
                         <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><X size={14} /></button>
