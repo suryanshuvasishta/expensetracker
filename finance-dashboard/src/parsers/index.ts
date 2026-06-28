@@ -7,6 +7,64 @@ import { axisCCParser } from './axis-cc';
 import { sbiCCParser } from './sbi-cc';
 import { iciciCCParser } from './icici-cc';
 
+export async function extractTransactionsFromXLS(file: File): Promise<ParsedTransaction[]> {
+  const XLSX = await import('xlsx');
+  const arrayBuffer = await file.arrayBuffer();
+  const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellText: true, cellDates: false });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
+
+  // Detect HDFC format: look for header row with "Date" "Narration" "Withdrawal Amt."
+  const headerIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c.includes('Narration')));
+  if (headerIdx >= 0) {
+    return parseHDFCXLSRows(rows, headerIdx, file.name);
+  }
+
+  return [];
+}
+
+function parseHDFCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx].map(c => c.trim());
+  const dateCol = header.findIndex(c => c === 'Date');
+  const narrationCol = header.findIndex(c => c.includes('Narration'));
+  const withdrawalCol = header.findIndex(c => c.includes('Withdrawal'));
+  const depositCol = header.findIndex(c => c.includes('Deposit'));
+  const balanceCol = header.findIndex(c => c.includes('Balance') || c.includes('Closing'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 2; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr || /^\*+$/.test(dateStr)) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const withdrawal = parseAmount(row[withdrawalCol] || '');
+    const deposit = parseAmount(row[depositCol] || '');
+    const balance = parseAmount(row[balanceCol] || '');
+
+    if (withdrawal === 0 && deposit === 0) continue;
+
+    const isDebit = withdrawal > 0;
+    transactions.push({
+      date,
+      account: 'HDFC Bank',
+      amount: isDebit ? withdrawal : deposit,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+      balance,
+    });
+  }
+
+  return transactions;
+}
+
 const PARSERS: BankParser[] = [
   iciciCCParser,   // Check ICICI CC before ICICI Bank (more specific)
   hdfcBankParser,

@@ -16,6 +16,14 @@ export function parseIndianDate(dateStr: string): string | null {
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
+  // DD/MM/YY (HDFC XLS uses 2-digit year)
+  const ddmmyy = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
+  if (ddmmyy) {
+    const [, d, m, y] = ddmmyy;
+    const fullYear = parseInt(y) >= 90 ? `19${y}` : `20${y}`;
+    return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
   // DD MMM YYYY (e.g. 15 Jan 2024)
   const ddMMMYYYY = dateStr.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
   if (ddMMMYYYY) {
