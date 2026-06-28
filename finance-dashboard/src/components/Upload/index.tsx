@@ -3,7 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
-import { extractTextFromPDF, parseStatement, finalizeTransactions, detectAccount } from '../../parsers';
+import { extractTextFromPDF, extractTransactionsFromXLS, parseStatement, finalizeTransactions, detectAccount } from '../../parsers';
 import type { AccountType, UploadedFile } from '../../types';
 import { generateId } from '../../parsers/base';
 
@@ -39,7 +39,7 @@ export function UploadPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'application/pdf': ['.pdf'], 'text/csv': ['.csv'], 'text/plain': ['.txt'] },
+    accept: { 'application/pdf': ['.pdf'], 'text/csv': ['.csv'], 'text/plain': ['.txt'], 'application/vnd.ms-excel': ['.xls'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] },
     multiple: true,
   });
 
@@ -50,15 +50,22 @@ export function UploadPage() {
   async function processFile(fs: FileState) {
     updateFileState(fs.id, { status: 'processing' });
     try {
-      let text = '';
-      if (fs.file.name.endsWith('.pdf')) {
-        text = await extractTextFromPDF(fs.file, fs.password);
-      } else {
-        text = await fs.file.text();
-      }
+      let parsed;
+      let account: AccountType | 'Unknown' = fs.account;
 
-      const account = fs.account !== 'Unknown' ? fs.account : detectAccount(text, fs.file.name);
-      const parsed = parseStatement(text, fs.file.name, account);
+      if (fs.file.name.endsWith('.xls') || fs.file.name.endsWith('.xlsx')) {
+        parsed = await extractTransactionsFromXLS(fs.file);
+        if (parsed.length > 0) account = parsed[0].account as AccountType;
+      } else {
+        let text = '';
+        if (fs.file.name.endsWith('.pdf')) {
+          text = await extractTextFromPDF(fs.file, fs.password);
+        } else {
+          text = await fs.file.text();
+        }
+        account = fs.account !== 'Unknown' ? fs.account : detectAccount(text, fs.file.name);
+        parsed = parseStatement(text, fs.file.name, account);
+      }
 
       if (parsed.length === 0) {
         updateFileState(fs.id, { status: 'error', error: 'No transactions found. Try selecting the account manually or check if the PDF needs a password.' });
@@ -123,7 +130,7 @@ export function UploadPage() {
             {isDragActive ? 'Drop files here...' : 'Drag & drop bank statements here'}
           </p>
           <p style={{ color: '#475569', fontSize: '0.8125rem', margin: 0 }}>
-            Supports PDF, CSV, TXT — HDFC, ICICI, Axis CC, SBI CC, ICICI CC
+            Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC
           </p>
         </div>
 

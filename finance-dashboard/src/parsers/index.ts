@@ -7,6 +7,198 @@ import { axisCCParser } from './axis-cc';
 import { sbiCCParser } from './sbi-cc';
 import { iciciCCParser } from './icici-cc';
 
+export async function extractTransactionsFromXLS(file: File): Promise<ParsedTransaction[]> {
+  const XLSX = await import('xlsx');
+  const arrayBuffer = await file.arrayBuffer();
+  const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array', cellText: true, cellDates: false });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
+
+  // Detect HDFC format: header row has "Date" and "Narration"
+  const hdfcHeaderIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c.includes('Narration')));
+  if (hdfcHeaderIdx >= 0) return parseHDFCXLSRows(rows, hdfcHeaderIdx, file.name);
+
+  // Detect ICICI Bank format: header row has "Transaction Date" and "Transaction Remarks"
+  const iciciHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c.includes('Transaction Remarks')));
+  if (iciciHeaderIdx >= 0) return parseICICIXLSRows(rows, iciciHeaderIdx, file.name);
+
+  // Detect ICICI CC format: header row has "Transaction Date" and "Details" and "Amount (INR)"
+  const iciciCCHeaderIdx = rows.findIndex(r => r.some(c => c === 'Transaction Date') && r.some(c => c === 'Details') && r.some(c => c.includes('Amount')));
+  if (iciciCCHeaderIdx >= 0) return parseICICICCXLSRows(rows, iciciCCHeaderIdx, file.name);
+
+  // Detect Axis CC format: header row has "Date", "Transaction Details", "Debit/Credit"
+  const axisHeaderIdx = rows.findIndex(r => r.some(c => c === 'Date') && r.some(c => c === 'Transaction Details') && r.some(c => c === 'Debit/Credit'));
+  if (axisHeaderIdx >= 0) return parseAxisCCXLSRows(rows, axisHeaderIdx, file.name);
+
+  return [];
+}
+
+function parseAxisCCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx];
+  const dateCol = header.findIndex(c => c === 'Date');
+  const narrationCol = header.findIndex(c => c === 'Transaction Details');
+  const amountCol = header.findIndex(c => c.includes('Amount'));
+  const typeCol = header.findIndex(c => c === 'Debit/Credit');
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    // Date format: "15 Jun '26" — strip the apostrophe before parsing
+    const dateStr = (row[dateCol] || '').replace(/'/g, '').trim();
+    if (!dateStr || dateStr.includes('End of Statement')) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const amount = parseAmount(row[amountCol] || '');
+    const isDebit = (row[typeCol] || '').toLowerCase().includes('debit');
+
+    if (amount === 0 || !narration) continue;
+
+    transactions.push({
+      date,
+      account: 'Axis Credit Card',
+      amount,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+    });
+  }
+
+  return transactions;
+}
+
+function parseICICICCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx];
+  const dateCol = header.findIndex(c => c === 'Transaction Date');
+  const narrationCol = header.findIndex(c => c === 'Details');
+  const amountCol = header.findIndex(c => c.includes('Amount'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 2; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const rawAmount = row[amountCol]?.trim() || '';
+
+    // Amount format: "1234.56 Dr." or "1234.56 Cr."
+    const amountMatch = rawAmount.match(/([\d,]+\.?\d*)\s*(Dr\.|Cr\.)/i);
+    if (!amountMatch) continue;
+
+    const amount = parseAmount(amountMatch[1]);
+    const isDebit = amountMatch[2].toLowerCase().startsWith('dr');
+
+    if (amount === 0) continue;
+
+    transactions.push({
+      date,
+      account: 'ICICI Credit Card',
+      amount,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+    });
+  }
+
+  return transactions;
+}
+
+function parseICICIXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx].map(c => c.trim());
+  const dateCol = header.findIndex(c => c === 'Transaction Date');
+  const narrationCol = header.findIndex(c => c.includes('Transaction Remarks'));
+  const withdrawalCol = header.findIndex(c => c.includes('Withdrawal'));
+  const depositCol = header.findIndex(c => c.includes('Deposit'));
+  const balanceCol = header.findIndex(c => c.includes('Balance'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const withdrawal = parseAmount(row[withdrawalCol] || '');
+    const deposit = parseAmount(row[depositCol] || '');
+    const balance = parseAmount(row[balanceCol] || '');
+
+    if (withdrawal === 0 && deposit === 0) continue;
+
+    const isDebit = withdrawal > 0;
+    transactions.push({
+      date,
+      account: 'ICICI Bank',
+      amount: isDebit ? withdrawal : deposit,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+      balance,
+    });
+  }
+
+  return transactions;
+}
+
+function parseHDFCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx].map(c => c.trim());
+  const dateCol = header.findIndex(c => c === 'Date');
+  const narrationCol = header.findIndex(c => c.includes('Narration'));
+  const withdrawalCol = header.findIndex(c => c.includes('Withdrawal'));
+  const depositCol = header.findIndex(c => c.includes('Deposit'));
+  const balanceCol = header.findIndex(c => c.includes('Balance') || c.includes('Closing'));
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 2; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = row[dateCol]?.trim();
+    if (!dateStr || /^\*+$/.test(dateStr)) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = row[narrationCol]?.trim() || '';
+    const withdrawal = parseAmount(row[withdrawalCol] || '');
+    const deposit = parseAmount(row[depositCol] || '');
+    const balance = parseAmount(row[balanceCol] || '');
+
+    if (withdrawal === 0 && deposit === 0) continue;
+
+    const isDebit = withdrawal > 0;
+    transactions.push({
+      date,
+      account: 'HDFC Bank',
+      amount: isDebit ? withdrawal : deposit,
+      narration,
+      category: '',
+      paymentMethod: inferPaymentMethod(narration),
+      type: isDebit ? 'debit' : 'credit',
+      sourceFile: filename,
+      balance,
+    });
+  }
+
+  return transactions;
+}
+
 const PARSERS: BankParser[] = [
   iciciCCParser,   // Check ICICI CC before ICICI Bank (more specific)
   hdfcBankParser,
@@ -34,10 +226,49 @@ export async function extractTextFromPDF(file: File, password?: string): Promise
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: any) => ('str' in item ? item.str : ''))
-      .join(' ');
-    fullText += pageText + '\n';
+
+    // Group text items by y-coordinate to reconstruct table rows.
+    // PDF coordinates are bottom-up, so sort y descending (top of page first).
+    const items = textContent.items
+      .filter((item: any) => 'str' in item && item.str.trim())
+      .map((item: any) => ({
+        str: item.str as string,
+        x: item.transform[4] as number,
+        y: item.transform[5] as number,
+        w: (item.width ?? 0) as number,
+      }))
+      .sort((a, b) => b.y - a.y || a.x - b.x);
+
+    // Cluster into lines by y proximity
+    const Y_TOLERANCE = 4;
+    const lines: { y: number; items: { str: string; x: number; w: number }[] }[] = [];
+
+    for (const item of items) {
+      const last = lines[lines.length - 1];
+      if (last && Math.abs(last.y - item.y) <= Y_TOLERANCE) {
+        last.items.push(item);
+      } else {
+        lines.push({ y: item.y, items: [item] });
+      }
+    }
+
+    // Build text: use tabs between cells when there's a significant x-gap
+    for (const line of lines) {
+      const sorted = line.items.sort((a, b) => a.x - b.x);
+      let lineText = '';
+      let prevEndX = -1;
+
+      for (const item of sorted) {
+        if (prevEndX >= 0) {
+          const gap = item.x - prevEndX;
+          lineText += gap > 15 ? '\t' : ' ';
+        }
+        lineText += item.str;
+        prevEndX = item.x + (item.w > 0 ? item.w : item.str.length * 5);
+      }
+
+      fullText += lineText.trim() + '\n';
+    }
   }
 
   return fullText;

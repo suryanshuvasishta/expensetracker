@@ -6,47 +6,49 @@ export const sbiCCParser: BankParser = {
 
   canParse(text: string, filename: string): boolean {
     const lower = text.toLowerCase() + filename.toLowerCase();
-    return (lower.includes('sbi') || lower.includes('state bank')) &&
-      (lower.includes('credit card') || lower.includes('cc'));
+    return (lower.includes('sbi card') || lower.includes('sbi credit card') || lower.includes('sbicard')) &&
+      !lower.includes('hdfc') && !lower.includes('icici');
   },
 
   parse(text: string, filename: string): ParsedTransaction[] {
     const transactions: ParsedTransaction[] = [];
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-    // SBI CC format: Sl.No | Transaction Date | Transaction Details | Domestic Amount | International Amount
+    // SBI Card statement format (PDF extracted):
+    // Date (DD Mon YY) | Transaction Details | Amount C/D
+    // Amount ends with " C" (credit) or " D" (debit)
     for (const line of lines) {
-      const parts = line.split(/\t|\s{2,}/).map(p => p.trim()).filter(Boolean);
-      if (parts.length < 3) continue;
+      // Amount pattern: digits/commas followed by C or D at end of line
+      const amountMatch = line.match(/^(.+?)\s+([\d,]+\.?\d*)\s+([CD])\s*$/);
+      if (!amountMatch) continue;
 
-      // Skip serial number (pure digit) at start
-      let startIdx = 0;
-      if (/^\d+$/.test(parts[0])) startIdx = 1;
+      const prefix = amountMatch[1].trim();
+      const amount = parseAmount(amountMatch[2]);
+      const isDebit = amountMatch[3] === 'D';
 
-      const date = parseIndianDate(parts[startIdx]);
-      if (!date) continue;
-
-      // Last two columns are domestic and international amounts
-      const remaining = parts.slice(startIdx + 1);
-      if (remaining.length < 2) continue;
-
-      const narration = remaining.slice(0, remaining.length - 2).join(' ');
-      const domesticAmt = parseAmount(remaining[remaining.length - 2]);
-      const intlAmt = parseAmount(remaining[remaining.length - 1]);
-
-      const amount = domesticAmt || intlAmt;
       if (amount === 0) continue;
 
-      // On SBI CC, negative amount = credit (payment)
-      const isCredit = amount < 0;
+      // Date is at the start: DD Mon YY (7-9 chars)
+      const dateMatch = prefix.match(/^(\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4})\s+(.*)/);
+      if (!dateMatch) continue;
+
+      const date = parseIndianDate(dateMatch[1]);
+      if (!date) continue;
+
+      const narration = dateMatch[2].trim();
+      if (!narration) continue;
+
+      // Skip pure fee/tax lines without meaningful narration
+      if (/^(CGST|SGST|IGST|FORGN CURR MARKUP)/i.test(narration)) continue;
+
       transactions.push({
         date,
         account: 'SBI Credit Card',
-        amount: Math.abs(amount),
-        narration: narration.trim(),
+        amount,
+        narration,
         category: '',
-        paymentMethod: isCredit ? 'Credit Card' : inferPaymentMethod(narration),
-        type: isCredit ? 'credit' : 'debit',
+        paymentMethod: inferPaymentMethod(narration),
+        type: isDebit ? 'debit' : 'credit',
         sourceFile: filename,
       });
     }

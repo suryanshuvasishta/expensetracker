@@ -9,15 +9,23 @@ export function parseIndianDate(dateStr: string): string | null {
   if (!dateStr) return null;
   dateStr = dateStr.trim();
 
-  // DD/MM/YYYY or DD-MM-YYYY
-  const ddmmyyyy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const ddmmyyyy = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (ddmmyyyy) {
     const [, d, m, y] = ddmmyyyy;
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
-  // DD MMM YYYY (e.g. 15 Jan 2024)
-  const ddMMMYYYY = dateStr.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  // DD/MM/YY (HDFC XLS uses 2-digit year)
+  const ddmmyy = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
+  if (ddmmyy) {
+    const [, d, m, y] = ddmmyy;
+    const fullYear = parseInt(y) >= 90 ? `19${y}` : `20${y}`;
+    return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // DD MMM YYYY or DD MMM YY (e.g. 15 Jan 2024 or 03 May 26)
+  const ddMMMYYYY = dateStr.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{2,4})$/);
   if (ddMMMYYYY) {
     const [, d, mon, y] = ddMMMYYYY;
     const months: Record<string, string> = {
@@ -25,11 +33,14 @@ export function parseIndianDate(dateStr: string): string | null {
       Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
     };
     const m = months[mon.slice(0, 3)];
-    if (m) return `${y}-${m}-${d.padStart(2, '0')}`;
+    if (m) {
+      const fullYear = y.length === 2 ? (parseInt(y) >= 90 ? `19${y}` : `20${y}`) : y;
+      return `${fullYear}-${m}-${d.padStart(2, '0')}`;
+    }
   }
 
-  // DD-MMM-YYYY
-  const ddMMMYYYY2 = dateStr.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+  // DD-MMM-YYYY or DD-MMM-YY
+  const ddMMMYYYY2 = dateStr.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
   if (ddMMMYYYY2) {
     const [, d, mon, y] = ddMMMYYYY2;
     const months: Record<string, string> = {
@@ -37,7 +48,10 @@ export function parseIndianDate(dateStr: string): string | null {
       Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
     };
     const m = months[mon.slice(0, 3)];
-    if (m) return `${y}-${m}-${d.padStart(2, '0')}`;
+    if (m) {
+      const fullYear = y.length === 2 ? (parseInt(y) >= 90 ? `19${y}` : `20${y}`) : y;
+      return `${fullYear}-${m}-${d.padStart(2, '0')}`;
+    }
   }
 
   // YYYY-MM-DD (already ISO)
