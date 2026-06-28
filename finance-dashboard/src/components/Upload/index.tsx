@@ -51,8 +51,11 @@ export function UploadPage() {
     updateFileState(fs.id, { status: 'processing' });
     try {
       let parsed;
+      let account: AccountType | 'Unknown' = fs.account;
+
       if (fs.file.name.endsWith('.xls') || fs.file.name.endsWith('.xlsx')) {
         parsed = await extractTransactionsFromXLS(fs.file);
+        if (parsed.length > 0) account = parsed[0].account as AccountType;
       } else {
         let text = '';
         if (fs.file.name.endsWith('.pdf')) {
@@ -60,7 +63,7 @@ export function UploadPage() {
         } else {
           text = await fs.file.text();
         }
-        const account = fs.account !== 'Unknown' ? fs.account : detectAccount(text, fs.file.name);
+        account = fs.account !== 'Unknown' ? fs.account : detectAccount(text, fs.file.name);
         parsed = parseStatement(text, fs.file.name, account);
       }
 
