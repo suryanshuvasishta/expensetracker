@@ -14,7 +14,7 @@ export function categorizeTransaction(narration: string, categories: Category[])
     }
   }
 
-  return 'Other';
+  return 'Other Expenses';
 }
 
 export function categorizeTransactions(

@@ -95,7 +95,7 @@ export function BudgetPage() {
     t.month === selectedMonth &&
     t.type === 'debit' &&
     (selectedOwner === 'All' || t.owner === selectedOwner) &&
-    !['Salary', 'Investments', 'Credit Card Payment', 'Transfers'].includes(t.category)
+    !['Salary', 'Investments', 'Credit Card Payment', 'Transfers', 'investment-txn', 'salary', 'cc-payment', 'transfer'].includes(t.category)
   );
   const actualByCategory: Record<string, number> = {};
   for (const t of monthTxns) {

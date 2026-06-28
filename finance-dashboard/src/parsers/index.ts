@@ -40,31 +40,32 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   return [];
 }
 
-// Category name → category id mapping for budget sheet categories
+// Category name → canonical display name used in CATEGORY_GROUPS / categorizer
 const BUDGET_SHEET_CATEGORY_MAP: Record<string, string> = {
-  'maid': 'house-help',
-  'cook': 'house-help',
-  'iron': 'house-help',
-  'toys': 'toys-joyrides',
-  'online shopping': 'online-shopping',
-  'one time large expenses (non budgeted)': 'one-time',
-  'home loan pre-emi': 'other-expenses',
-  'credit card pending payment carried forward': 'cc-payment',
-  'on behalf of': 'transfer',
-  'brokerage': 'investment-txn',
-  'ssy': 'investment-txn',
-  'ppf': 'investment-txn',
+  'maid': 'House Help',
+  'cook': 'House Help',
+  'iron': 'House Help',
+  'house help': 'House Help',
+  'toys': 'Toys & Joy Rides',
+  'online shopping': 'Other Online Shopping',
+  'one time large expenses (non budgeted)': 'One Time Large Expenses',
+  'home loan pre-emi': 'Other Expenses',
+  'credit card pending payment carried forward': 'Credit Card Payment',
+  'on behalf of': 'Transfers',
+  'brokerage': 'Investments',
+  'ssy': 'Investments',
+  'ppf': 'Investments',
+  'personal & spousal healthcare': 'Personal & Spousal Healthcare',
 };
 
-// Any sheet category containing these substrings → investment-txn
-const INVESTMENT_KEYWORDS = ['fund', 'nifty', 'sensex', 'smallcap', 'midcap', 'flexicap', 'flexi cap', 'balanced advantage', 'equity savings', 'liquid', 'debt'];
+// Any sheet category containing these substrings → Investments
+const INVESTMENT_KEYWORDS = ['fund', 'nifty', 'sensex', 'smallcap', 'midcap', 'flexicap', 'flexi cap', 'balanced advantage', 'equity savings'];
 
 function mapBudgetCategory(raw: string): string {
   const lower = raw.toLowerCase().trim();
   if (BUDGET_SHEET_CATEGORY_MAP[lower]) return BUDGET_SHEET_CATEGORY_MAP[lower];
-  if (INVESTMENT_KEYWORDS.some(k => lower.includes(k))) return 'investment-txn';
-  // Try direct name match to known category names (lowercase compare)
-  return raw; // leave as-is; categorizer will match by name
+  if (INVESTMENT_KEYWORDS.some(k => lower.includes(k))) return 'Investments';
+  return raw; // already a display name (Rent, Groceries, etc.)
 }
 
 const MONTH_ABBR: Record<string, number> = {
