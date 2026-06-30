@@ -9,7 +9,7 @@ import { OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
 
 const ACCOUNT_OPTIONS: AccountType[] = [
-  'HDFC Bank', 'ICICI Bank', 'Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card',
+  'HDFC Bank', 'ICICI Bank', 'Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card', 'Paytm Wallet',
 ];
 
 interface FileState {
@@ -134,7 +134,7 @@ export function UploadPage() {
             {isDragActive ? 'Drop files here...' : 'Drag & drop bank statements here'}
           </p>
           <p style={{ color: '#475569', fontSize: '0.8125rem', margin: 0 }}>
-            Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC
+            Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC, Paytm
           </p>
         </div>
 

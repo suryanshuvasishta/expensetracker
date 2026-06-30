@@ -28,6 +28,7 @@ export type AccountType =
   | 'Axis Credit Card'
   | 'SBI Credit Card'
   | 'ICICI Credit Card'
+  | 'Paytm Wallet'
   | 'Unknown';
 
 export type PaymentMethod =
@@ -58,6 +59,7 @@ export interface Transaction {
   sourceFile: string;
   balance?: number;
   refNumber?: string;
+  linkedAccount?: string; // for wallet txns: the funding source reported by the statement (e.g. "UPI Lite" or a bank account)
   correlatedIds?: string[];
   isCorrelationPair?: boolean; // true if this is a CC payment that matches a CC statement
   month: string; // YYYY-MM for easy grouping

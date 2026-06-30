@@ -253,6 +253,7 @@ const ACCOUNT_COLORS: Record<string, string> = {
   'Axis Credit Card': '#dc2626',
   'SBI Credit Card': '#059669',
   'ICICI Credit Card': '#d97706',
+  'Paytm Wallet': '#00baf2',
   'Unknown': '#475569',
 };
 
