@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PlusCircle, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import type { MonthlyBudget, InvestmentLine, Owner } from '../../types';
-import { CATEGORY_GROUPS } from '../../types';
+import { buildCategoryGroups, isNonBudgetGroup } from '../../types';
 import { generateId } from '../../parsers/base';
 
 const INVESTMENT_GOALS = ['Retirement', "Children's Fund", 'Home Ownership', 'Emergency', 'Consumer Durables', 'Other'] as const;
@@ -60,7 +60,12 @@ function NumInput({ value, onChange, style }: { value: number; onChange: (v: num
 }
 
 export function BudgetPage() {
-  const { transactions, saveBudget, getBudget, selectedMonth, setSelectedMonth, selectedOwner } = useStore();
+  const { transactions, categories, saveBudget, getBudget, selectedMonth, setSelectedMonth, selectedOwner } = useStore();
+  const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
+  const nonBudgetCategoryNames = useMemo(
+    () => new Set(categories.filter(c => isNonBudgetGroup(c.group)).map(c => c.name)),
+    [categories]
+  );
   const owner = (selectedOwner === 'All' ? 'Suryanshu' : selectedOwner) as import('../../types').Owner;
   const [budget, setBudget] = useState<MonthlyBudget>(() => emptyBudget(owner, selectedMonth));
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -95,7 +100,7 @@ export function BudgetPage() {
     t.month === selectedMonth &&
     t.type === 'debit' &&
     (selectedOwner === 'All' || t.owner === selectedOwner) &&
-    !['Salary', 'Investments', 'Credit Card Payment', 'Transfers', 'investment-txn', 'salary', 'cc-payment', 'transfer'].includes(t.category)
+    !nonBudgetCategoryNames.has(t.category)
   );
   const actualByCategory: Record<string, number> = {};
   for (const t of monthTxns) {
@@ -111,10 +116,10 @@ export function BudgetPage() {
   }
 
   const oneTimeBudgeted = Object.entries(budget.categoryBudgets)
-    .filter(([cat]) => CATEGORY_GROUPS.find(g => g.group === 'One Time / Non-Budgeted')?.categories.includes(cat))
+    .filter(([cat]) => categoryGroups.find(g => g.group === 'One Time / Non-Budgeted')?.categories.includes(cat))
     .reduce((s, [, v]) => s + v, 0);
   const oneTimeActual = Object.entries(actualByCategory)
-    .filter(([cat]) => CATEGORY_GROUPS.find(g => g.group === 'One Time / Non-Budgeted')?.categories.includes(cat))
+    .filter(([cat]) => categoryGroups.find(g => g.group === 'One Time / Non-Budgeted')?.categories.includes(cat))
     .reduce((s, [, v]) => s + v, 0);
 
   const totalBudgeted = Object.values(budget.categoryBudgets).reduce((s, v) => s + v, 0) - oneTimeBudgeted;
@@ -237,7 +242,7 @@ export function BudgetPage() {
         </div>
 
         {/* Budget vs Actual per group */}
-        {CATEGORY_GROUPS.map(({ group, categories }) => {
+        {categoryGroups.filter(({ group }) => !isNonBudgetGroup(group)).map(({ group, categories }) => {
           const isOneTime = group === 'One Time / Non-Budgeted';
           const groupBudgeted = categories.reduce((s, cat) => s + (budget.categoryBudgets[cat] || 0), 0);
           const groupActual = categories.reduce((s, cat) => s + (actualByCategory[cat] || 0), 0);

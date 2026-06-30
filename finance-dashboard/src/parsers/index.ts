@@ -18,6 +18,17 @@ export async function extractTransactionsFromXLS(file: File): Promise<ParsedTran
   ).length >= 2;
   if (isBudgetSheet) return parseBudgetSheetXLSX(workbook, XLSX);
 
+  // Detect Paytm statement: dedicated "Passbook Payment History" tab
+  const paytmSheetName = workbook.SheetNames.find((n: string) => /passbook payment history/i.test(n.trim()));
+  if (paytmSheetName) {
+    const paytmSheet = workbook.Sheets[paytmSheetName];
+    const paytmRows: string[][] = XLSX.utils.sheet_to_json(paytmSheet, { header: 1, defval: '', raw: false }) as string[][];
+    const paytmHeaderIdx = paytmRows.findIndex(r =>
+      r.some(c => c === 'Date') && r.some(c => c === 'Transaction Details') && r.some(c => c === 'Your Account')
+    );
+    if (paytmHeaderIdx >= 0) return parsePaytmXLSRows(paytmRows, paytmHeaderIdx, file.name);
+  }
+
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) as string[][];
 
@@ -174,6 +185,71 @@ function parseBudgetSheetXLSX(workbook: any, XLSX: any): ParsedTransaction[] {
   }
 
   return results;
+}
+
+// Paytm "Tags" auto-tagging → our category names. Only unambiguous tags are mapped;
+// everything else falls through to the normal narration-keyword categorizer.
+const PAYTM_TAG_CATEGORY_MAP: Record<string, string> = {
+  'money transfer': 'Transfers',
+  'self-transfer': 'Transfers',
+  'money received': 'Transfers',
+  'groceries': 'Groceries',
+};
+
+function mapPaytmTag(rawTag: string): string {
+  const cleaned = rawTag.replace(/^#/, '').replace(/[^\x00-\x7F]/g, '').trim().toLowerCase();
+  return PAYTM_TAG_CATEGORY_MAP[cleaned] || '';
+}
+
+function parsePaytmXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
+  const header = rows[headerIdx].map(c => c.trim());
+  const dateCol = header.findIndex(c => c === 'Date');
+  const detailsCol = header.findIndex(c => c === 'Transaction Details');
+  const accountCol = header.findIndex(c => c === 'Your Account');
+  const amountCol = header.findIndex(c => c === 'Amount');
+  const refCol = header.findIndex(c => c.includes('UPI Ref'));
+  const tagsCol = header.findIndex(c => c === 'Tags');
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const dateStr = (row[dateCol] || '').trim();
+    if (!dateStr) continue;
+
+    const date = parseIndianDate(dateStr);
+    if (!date) continue;
+
+    const narration = (row[detailsCol] || '').trim();
+    if (!narration) continue;
+
+    // Wallet top-ups (bank → Paytm wallet) are internal transfers, not expenses.
+    // Skipping them avoids double-counting against the wallet spends they fund.
+    if (/^money added to/i.test(narration)) continue;
+
+    const rawAmount = (row[amountCol] || '').trim();
+    const amount = parseAmount(rawAmount);
+    if (amount === 0) continue;
+
+    const linkedAccount = (row[accountCol] || '').trim();
+    const refNumber = refCol >= 0 ? (row[refCol] || '').trim() || undefined : undefined;
+    const category = tagsCol >= 0 ? mapPaytmTag(row[tagsCol] || '') : '';
+
+    transactions.push({
+      date,
+      account: 'Paytm Wallet',
+      amount: Math.abs(amount),
+      narration,
+      category,
+      paymentMethod: 'UPI',
+      type: amount < 0 ? 'debit' : 'credit',
+      sourceFile: filename,
+      linkedAccount,
+      refNumber,
+    });
+  }
+
+  return transactions;
 }
 
 function parseAxisCCXLSRows(rows: string[][], headerIdx: number, filename: string): ParsedTransaction[] {
