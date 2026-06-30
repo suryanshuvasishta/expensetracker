@@ -5,8 +5,12 @@ import { Header } from '../Layout/Header';
 import { DEFAULT_CATEGORIES } from '../../db/database';
 import { fetchCategoriesFromSheet, parseCategoriesFromCSV } from '../../services/google-drive';
 import { exportSnapshot, importSnapshot, getCurrentFY } from '../../services/snapshot';
-import type { Category } from '../../types';
+import { exportTransactionsCSV, importTransactionsCSV } from '../../services/csvBackup';
+import type { Category, Owner } from '../../types';
+import { GROUP_ORDER } from '../../types';
 import { generateId } from '../../parsers/base';
+
+const ALL_GROUPS = [...GROUP_ORDER, 'Income', 'System'];
 
 export function SettingsPage() {
   const { categories, setCategories, rerunCorrelation, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, selectedMonth, loadAll } = useStore();
@@ -18,6 +22,8 @@ export function SettingsPage() {
   const [csvText, setCsvText] = useState('');
   const [snapshotMsg, setSnapshotMsg] = useState('');
   const [importing, setImporting] = useState(false);
+  const [txnCsvMsg, setTxnCsvMsg] = useState('');
+  const [txnCsvImporting, setTxnCsvImporting] = useState(false);
 
   async function syncFromSheet() {
     if (!sheetId || !accessToken) {
@@ -56,6 +62,7 @@ export function SettingsPage() {
       keywords: [],
       color: '#94a3b8',
       icon: '',
+      group: 'Miscellaneous',
     }]);
   }
 
@@ -76,6 +83,31 @@ export function SettingsPage() {
       await exportSnapshot(transactions, budgets, investments, liabilities, categories, filterType, filterValue);
     } catch (e: any) {
       setSnapshotMsg(`Export error: ${e.message}`);
+    }
+  }
+
+  async function handleTxnCsvExport(owner: Owner | 'All', suffix: string) {
+    try {
+      await exportTransactionsCSV(owner, suffix);
+    } catch (e: any) {
+      setTxnCsvMsg(`Export error: ${e.message}`);
+    }
+  }
+
+  async function handleTxnCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setTxnCsvImporting(true);
+    setTxnCsvMsg('');
+    try {
+      const result = await importTransactionsCSV(file);
+      await loadAll();
+      setTxnCsvMsg(`Imported ${result.imported} transactions from CSV`);
+    } catch (err: any) {
+      setTxnCsvMsg(`Import error: ${err.message}`);
+    } finally {
+      setTxnCsvImporting(false);
     }
   }
 
@@ -130,6 +162,41 @@ export function SettingsPage() {
           {snapshotMsg && (
             <div style={{ marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8125rem', background: snapshotMsg.startsWith('Import error') || snapshotMsg.startsWith('Export error') ? 'rgba(239,68,68,0.1)' : 'rgba(74,222,128,0.1)', color: snapshotMsg.startsWith('Import error') || snapshotMsg.startsWith('Export error') ? '#f87171' : '#4ade80' }}>
               {snapshotMsg}
+            </div>
+          )}
+        </div>
+
+        {/* Transactions CSV Backup */}
+        <div className="card">
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>Transactions CSV Backup</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
+            Full-fidelity CSV export/import of all transactions (every account, every month) — usable in Excel/Sheets and
+            round-trips cleanly back into the app, so you don't need to re-parse source statements after correcting categories.
+            Use this for periodic backups; import upserts by transaction ID.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            <button className="btn-ghost" onClick={() => handleTxnCsvExport('Suryanshu', 'suryanshu')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export Suryanshu
+            </button>
+            <button className="btn-ghost" onClick={() => handleTxnCsvExport('Khushboo', 'khushboo')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export Khushboo
+            </button>
+            <button className="btn-ghost" onClick={() => handleTxnCsvExport('All', 'combined')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+              <Download size={14} /> Export Combined (All)
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <label style={{ cursor: 'pointer' }}>
+              <span className="btn-ghost" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', padding: '0.5rem 1rem' }}>
+                <Upload size={14} /> {txnCsvImporting ? 'Importing…' : 'Import Transactions CSV'}
+              </span>
+              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleTxnCsvImport} disabled={txnCsvImporting} />
+            </label>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>⚠️ Only import a CSV exported from this backup tool — upserts by ID.</span>
+          </div>
+          {txnCsvMsg && (
+            <div style={{ marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8125rem', background: txnCsvMsg.startsWith('Import error') || txnCsvMsg.startsWith('Export error') ? 'rgba(239,68,68,0.1)' : 'rgba(74,222,128,0.1)', color: txnCsvMsg.startsWith('Import error') || txnCsvMsg.startsWith('Export error') ? '#f87171' : '#4ade80' }}>
+              {txnCsvMsg}
             </div>
           )}
         </div>
@@ -216,6 +283,13 @@ export function SettingsPage() {
                   placeholder="keywords, comma, separated"
                   style={{ flex: 1 }}
                 />
+                <select
+                  value={cat.group || 'Miscellaneous'}
+                  onChange={e => updateCat(cat.id, { group: e.target.value })}
+                  style={{ width: '170px', fontSize: '0.75rem' }}
+                >
+                  {ALL_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
                 <input
                   value={cat.icon || ''}
                   onChange={e => updateCat(cat.id, { icon: e.target.value })}

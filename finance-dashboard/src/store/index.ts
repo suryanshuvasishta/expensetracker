@@ -27,6 +27,7 @@ interface AppState {
   setSelectedOwner: (owner: Owner | 'All') => void;
   setTheme: (t: 'dark' | 'light') => void;
   setCategories: (cats: Category[]) => Promise<void>;
+  addCategory: (cat: Category) => Promise<void>;
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
   rerunCorrelation: () => Promise<void>;
@@ -129,6 +130,11 @@ export const useStore = create<AppState>((set, get) => ({
     await db.categories.clear();
     await db.categories.bulkPut(cats);
     set({ categories: cats });
+  },
+
+  async addCategory(cat: Category) {
+    await db.categories.put(cat);
+    set(state => ({ categories: [...state.categories.filter(c => c.id !== cat.id), cat] }));
   },
 
   async addUploadedFile(file: UploadedFile) {

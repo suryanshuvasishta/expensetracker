@@ -3,8 +3,8 @@ import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles } from 'luci
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { generateId } from '../../parsers/base';
-import type { Transaction } from '../../types';
-import { CATEGORY_GROUPS } from '../../types';
+import type { Transaction, Category } from '../../types';
+import { buildCategoryGroups } from '../../types';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -18,7 +18,7 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, updateTransaction, saveCategoryRule, applyRuleToAll } = useStore();
+  const { transactions, categories, selectedMonth, updateTransaction, saveCategoryRule, applyRuleToAll, addCategory } = useStore();
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
@@ -50,13 +50,38 @@ export function TransactionsPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
   const accounts = [...new Set(transactions.map(t => t.account))];
-  const SYSTEM_CATS = ['Salary', 'Investments', 'Credit Card Payment', 'Transfers'];
+  const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
+  const ADD_NEW = '__add_new__';
 
   function startEdit(t: Transaction) {
     setEditingId(t.id);
     setEditCategory(t.category);
     setLearnPrompt(null);
     setLearnApplied(null);
+  }
+
+  async function handleCategorySelect(value: string) {
+    if (value === ADD_NEW) {
+      const name = window.prompt('New category name:');
+      if (!name || !name.trim()) return;
+      const trimmed = name.trim();
+      if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+        setEditCategory(trimmed);
+        return;
+      }
+      const group = window.prompt('Group for this category (e.g. Miscellaneous, Income):', 'Miscellaneous') || 'Miscellaneous';
+      const newCat: Category = {
+        id: generateId(),
+        name: trimmed,
+        keywords: [],
+        color: '#94a3b8',
+        group: group.trim() || 'Miscellaneous',
+      };
+      await addCategory(newCat);
+      setEditCategory(trimmed);
+      return;
+    }
+    setEditCategory(value);
   }
 
   async function saveEdit(t: Transaction) {
@@ -132,14 +157,11 @@ export function TransactionsPage() {
             </select>
             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{ width: 'auto' }}>
               <option value="">All Categories</option>
-              {CATEGORY_GROUPS.map(({ group, categories: cats }) => (
+              {categoryGroups.map(({ group, categories: cats }) => (
                 <optgroup key={group} label={group}>
                   {cats.map(c => <option key={c} value={c}>{c}</option>)}
                 </optgroup>
               ))}
-              <optgroup label="System">
-                {SYSTEM_CATS.map(c => <option key={c} value={c}>{c}</option>)}
-              </optgroup>
             </select>
             <button className="btn-ghost" onClick={() => { setFilterAccount(''); setFilterType(''); setFilterCategory(''); setSearch(''); }}>
               Clear filters
@@ -193,15 +215,13 @@ export function TransactionsPage() {
                   <td>
                     {editingId === t.id ? (
                       <div style={{ display: 'flex', gap: '4px' }}>
-                        <select value={editCategory} onChange={e => setEditCategory(e.target.value)} style={{ width: '170px', padding: '2px 4px', fontSize: '0.75rem' }}>
-                          {CATEGORY_GROUPS.map(({ group, categories: cats }) => (
+                        <select value={editCategory} onChange={e => handleCategorySelect(e.target.value)} style={{ width: '170px', padding: '2px 4px', fontSize: '0.75rem' }}>
+                          {categoryGroups.map(({ group, categories: cats }) => (
                             <optgroup key={group} label={group}>
                               {cats.map(c => <option key={c} value={c}>{c}</option>)}
                             </optgroup>
                           ))}
-                          <optgroup label="System">
-                            {SYSTEM_CATS.map(c => <option key={c} value={c}>{c}</option>)}
-                          </optgroup>
+                          <option value={ADD_NEW}>+ Add new category…</option>
                         </select>
                         <button onClick={() => saveEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4ade80' }}><Check size={14} /></button>
                         <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171' }}><X size={14} /></button>

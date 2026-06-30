@@ -72,6 +72,7 @@ export interface Category {
   keywords: string[];
   color: string;
   icon?: string;
+  group?: string;
 }
 
 export interface UploadedFile {
@@ -136,40 +137,49 @@ export interface MonthlyBudget {
   categoryBudgets: Record<string, number>;
 }
 
-export const CATEGORY_GROUPS: { group: string; categories: string[] }[] = [
-  {
-    group: 'Housing',
-    categories: ['Rent', 'Electricity', 'Gas', 'Water', 'Garbage', 'Internet & Phone', 'Home Maintenance', 'House Help', 'CAC', 'CAE'],
-  },
-  {
-    group: 'Food',
-    categories: ['Groceries', 'Ordering In', 'Eating Out'],
-  },
-  {
-    group: 'Transportation',
-    categories: ['Fuel', 'Car Maintenance', 'Car Cleaner', 'Public Transport', 'Tolls & Parking'],
-  },
-  {
-    group: 'Education & Self Improvement',
-    categories: ['School Fee', 'Books & Courses', 'Software & Services', 'Subscriptions', 'Office Supplies'],
-  },
-  {
-    group: 'Healthcare',
-    categories: ['Child Healthcare', 'Personal & Spousal Healthcare', 'Parental Healthcare'],
-  },
-  {
-    group: 'Insurance',
-    categories: ['Life Insurance', 'Health Insurance', 'Car Insurance', 'Parental Health Insurance'],
-  },
-  {
-    group: 'Miscellaneous',
-    categories: ['Clothes', 'Movies & Entertainment', 'Petty Expenses', 'Gifts', 'Toys & Joy Rides', 'Other Online Shopping', 'Other Expenses', 'Contingency'],
-  },
-  {
-    group: 'One Time / Non-Budgeted',
-    categories: ['One Time Large Expenses', 'Car Shopping', 'Home Improvement Shopping', 'Income Tax'],
-  },
+// Default group display order. Any group not listed here (e.g. a user-created group)
+// is appended at the end, alphabetically, before the non-budget groups.
+export const GROUP_ORDER: string[] = [
+  'Housing',
+  'Food',
+  'Transportation',
+  'Education & Self Improvement',
+  'Healthcare',
+  'Insurance',
+  'Miscellaneous',
+  'One Time / Non-Budgeted',
 ];
+
+// Groups that represent money in/internal movement rather than budgeted spend —
+// excluded from Budget actuals and from the "spend" category dropdowns' regular sections.
+export const NON_BUDGET_GROUPS = ['Income', 'System'];
+
+export function isNonBudgetGroup(group: string | undefined): boolean {
+  return !!group && NON_BUDGET_GROUPS.includes(group);
+}
+
+const FALLBACK_GROUP = 'Miscellaneous';
+
+/** Builds category groups dynamically from the live (DB-backed, user-editable) category list. */
+export function buildCategoryGroups(categories: Category[]): { group: string; categories: string[] }[] {
+  const byGroup = new Map<string, string[]>();
+  for (const c of categories) {
+    const g = c.group || FALLBACK_GROUP;
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g)!.push(c.name);
+  }
+  const groups = [...byGroup.keys()];
+  groups.sort((a, b) => {
+    const ai = GROUP_ORDER.indexOf(a);
+    const bi = GROUP_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    if (isNonBudgetGroup(a) !== isNonBudgetGroup(b)) return isNonBudgetGroup(a) ? 1 : -1;
+    return a.localeCompare(b);
+  });
+  return groups.map(group => ({ group, categories: byGroup.get(group)! }));
+}
 
 export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'> & { owner?: Owner };
 
