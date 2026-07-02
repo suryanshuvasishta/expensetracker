@@ -76,15 +76,34 @@ export async function exportSnapshot(
   URL.revokeObjectURL(url);
 }
 
-export async function importSnapshot(file: File): Promise<{ imported: number; type: string }> {
-  const text = await file.text();
-  const snapshot: Snapshot = JSON.parse(text);
+/** Build a full-DB snapshot object (used by Drive sync as well as manual export). */
+export async function buildFullSnapshot(): Promise<Snapshot> {
+  const [transactions, budgets, investments, liabilities, categories] = await Promise.all([
+    db.transactions.toArray(),
+    db.budgets.toArray(),
+    db.investments.toArray(),
+    db.liabilities.toArray(),
+    db.categories.toArray(),
+  ]);
+  return {
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    filterType: 'all',
+    filterLabel: 'All Time',
+    transactions,
+    budgets,
+    investments,
+    liabilities,
+    categories,
+  };
+}
 
+/** Merge a snapshot into the DB (upsert by id — same-id records are overwritten). */
+export async function applySnapshot(snapshot: Snapshot): Promise<{ imported: number; type: string }> {
   if (!snapshot.version || !snapshot.transactions) {
     throw new Error('Invalid snapshot file format');
   }
 
-  // Merge (upsert by id — existing records with same id are overwritten)
   await db.transactions.bulkPut(snapshot.transactions);
   if (snapshot.budgets?.length) await db.budgets.bulkPut(snapshot.budgets);
   if (snapshot.investments?.length) await db.investments.bulkPut(snapshot.investments);
@@ -95,4 +114,10 @@ export async function importSnapshot(file: File): Promise<{ imported: number; ty
     imported: snapshot.transactions.length,
     type: snapshot.filterLabel || 'Unknown',
   };
+}
+
+export async function importSnapshot(file: File): Promise<{ imported: number; type: string }> {
+  const text = await file.text();
+  const snapshot: Snapshot = JSON.parse(text);
+  return applySnapshot(snapshot);
 }

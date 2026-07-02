@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles } from 'lucide-react';
+import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles, Plus, ClipboardCheck, Trash2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { generateId } from '../../parsers/base';
-import type { Transaction, Category } from '../../types';
-import { buildCategoryGroups } from '../../types';
+import type { Transaction, Category, Owner, AccountType, PaymentMethod } from '../../types';
+import { buildCategoryGroups, MANUAL_SOURCE, OWNERS } from '../../types';
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -18,7 +18,8 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, updateTransaction, saveCategoryRule, applyRuleToAll, addCategory } = useStore();
+  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, addTransactions, saveCategoryRule, applyRuleToAll, addCategory } = useStore();
+  const [showAddForm, setShowAddForm] = useState(false);
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
@@ -52,6 +53,17 @@ export function TransactionsPage() {
   const accounts = [...new Set(transactions.map(t => t.account))];
   const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
   const ADD_NEW = '__add_new__';
+
+  // Kakeibo month-end check: manual entries verified against statements vs still pending
+  const manualMonth = monthTxns.filter(t => t.sourceFile === MANUAL_SOURCE);
+  const manualVerified = manualMonth.filter(t => t.isCorrelationPair && t.correlatedIds?.length);
+  const manualCash = manualMonth.filter(t => t.account === 'Cash');
+  const manualPending = manualMonth.filter(t => t.account !== 'Cash' && !(t.isCorrelationPair && t.correlatedIds?.length));
+
+  async function handleAddManual(txn: Transaction) {
+    await addTransactions([txn]);
+    setShowAddForm(false);
+  }
 
   function startEdit(t: Transaction) {
     setEditingId(t.id);
@@ -135,6 +147,9 @@ export function TransactionsPage() {
               style={{ paddingLeft: '2rem' }}
             />
           </div>
+          <button className="btn-primary" onClick={() => setShowAddForm(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Plus size={14} /> Add Entry
+          </button>
           <button className="btn-ghost" onClick={() => setShowFilters(!showFilters)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Filter size={14} /> Filters
           </button>
@@ -169,6 +184,21 @@ export function TransactionsPage() {
           </div>
         )}
 
+        {/* Kakeibo month-end check */}
+        {manualMonth.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap', padding: '0.625rem 1rem', borderRadius: '10px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', fontSize: '0.8125rem' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#60a5fa', fontWeight: 600 }}>
+              <ClipboardCheck size={15} /> Kakeibo check ({selectedMonth})
+            </span>
+            <span style={{ color: '#4ade80' }}>✓ {manualVerified.length} verified against statements</span>
+            <span style={{ color: '#94a3b8' }}>💵 {manualCash.length} cash (no statement)</span>
+            <span style={{ color: manualPending.length > 0 ? '#fbbf24' : '#64748b' }}>
+              ⏳ {manualPending.length} awaiting statement match
+              {manualPending.length > 0 && ` (${fmt(manualPending.reduce((s, t) => s + t.amount, 0))})`}
+            </span>
+          </div>
+        )}
+
         {/* Table */}
         <div className="table-wrapper">
           <table>
@@ -199,8 +229,16 @@ export function TransactionsPage() {
                   </td>
                   <td style={{ maxWidth: '300px' }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8125rem' }}>
+                      {t.sourceFile === MANUAL_SOURCE && (
+                        <span
+                          title={t.isCorrelationPair && t.correlatedIds?.length ? 'Manual entry — verified against statement' : t.account === 'Cash' ? 'Manual cash entry' : 'Manual entry — awaiting statement match'}
+                          style={{ marginRight: '5px', fontSize: '0.7rem' }}
+                        >
+                          {t.isCorrelationPair && t.correlatedIds?.length ? '✅' : t.account === 'Cash' ? '💵' : '✍️'}
+                        </span>
+                      )}
                       {t.narration}
-                      {t.isCorrelationPair && (
+                      {t.isCorrelationPair && t.sourceFile !== MANUAL_SOURCE && (
                         <span title="Correlated transaction" style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '4px' }}>
                           <Link2 size={10} color="#818cf8" />
                         </span>
@@ -231,16 +269,36 @@ export function TransactionsPage() {
                     )}
                   </td>
                   <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{t.paymentMethod}</td>
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <button onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '4px', borderRadius: '4px' }}>
                       <Edit2 size={13} />
                     </button>
+                    {t.sourceFile === MANUAL_SOURCE && (
+                      <button
+                        onClick={() => { if (confirm('Delete this manual entry?')) deleteTransaction(t.id); }}
+                        title="Delete manual entry"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7f1d1d', padding: '4px', borderRadius: '4px' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {/* Add manual entry modal */}
+        {showAddForm && (
+          <AddTransactionModal
+            categoryGroups={categoryGroups}
+            defaultOwner={selectedOwner === 'All' ? 'Suryanshu' : selectedOwner}
+            selectedMonth={selectedMonth}
+            onSave={handleAddManual}
+            onClose={() => setShowAddForm(false)}
+          />
+        )}
 
         {/* Learn prompt */}
         {learnPrompt && (
@@ -274,6 +332,7 @@ const ACCOUNT_COLORS: Record<string, string> = {
   'SBI Credit Card': '#059669',
   'ICICI Credit Card': '#d97706',
   'Paytm Wallet': '#00baf2',
+  'Cash': '#fbbf24',
   'Unknown': '#475569',
 };
 
@@ -312,6 +371,142 @@ function CategoryBadge({ category, categories }: { category: string; categories:
     }}>
       {category || 'Uncategorized'}
     </span>
+  );
+}
+
+const MANUAL_ACCOUNTS: AccountType[] = ['Cash', 'HDFC Bank', 'ICICI Bank', 'Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card', 'Paytm Wallet'];
+const PAYMENT_METHODS: PaymentMethod[] = ['Cash', 'UPI', 'Credit Card', 'Debit Card', 'NEFT', 'IMPS', 'Net Banking', 'Other'];
+
+function AddTransactionModal({
+  categoryGroups, defaultOwner, selectedMonth, onSave, onClose,
+}: {
+  categoryGroups: { group: string; categories: string[] }[];
+  defaultOwner: Owner;
+  selectedMonth: string;
+  onSave: (t: Transaction) => void;
+  onClose: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultDate = today.startsWith(selectedMonth) ? today : `${selectedMonth}-01`;
+
+  const [date, setDate] = useState(defaultDate);
+  const [owner, setOwner] = useState<Owner>(defaultOwner);
+  const [type, setType] = useState<'debit' | 'credit'>('debit');
+  const [amount, setAmount] = useState('');
+  const [account, setAccount] = useState<AccountType>('Cash');
+  const [narration, setNarration] = useState('');
+  const [category, setCategory] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
+
+  const valid = !!date && parseFloat(amount) > 0 && narration.trim().length > 0;
+
+  function save() {
+    if (!valid) return;
+    onSave({
+      id: generateId(),
+      owner,
+      date,
+      account,
+      amount: parseFloat(amount),
+      narration: narration.trim(),
+      category, // empty → auto-categorized by keywords/rules on add
+      paymentMethod,
+      type,
+      sourceFile: MANUAL_SOURCE,
+      month: date.slice(0, 7),
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  const labelStyle: React.CSSProperties = { fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' };
+  const fieldStyle: React.CSSProperties = { width: '100%' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div className="card" style={{ width: '440px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Add Transaction (Kakeibo)</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={16} /></button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Owner</label>
+              <select value={owner} onChange={e => setOwner(e.target.value as Owner)} style={fieldStyle}>
+                {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div>
+              <label style={labelStyle}>Type</label>
+              <select value={type} onChange={e => setType(e.target.value as 'debit' | 'credit')} style={fieldStyle}>
+                <option value="debit">Expense (debit)</option>
+                <option value="credit">Income (credit)</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Amount (₹)</label>
+              <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" style={fieldStyle} />
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Description</label>
+            <input value={narration} onChange={e => setNarration(e.target.value)} placeholder="e.g. Vegetables from sabzi mandi" style={fieldStyle} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div>
+              <label style={labelStyle}>Paid via account</label>
+              <select value={account} onChange={e => {
+                const a = e.target.value as AccountType;
+                setAccount(a);
+                if (a === 'Cash') setPaymentMethod('Cash');
+                else if (a.includes('Credit Card')) setPaymentMethod('Credit Card');
+                else setPaymentMethod('UPI');
+              }} style={fieldStyle}>
+                {MANUAL_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Payment method</label>
+              <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as PaymentMethod)} style={fieldStyle}>
+                {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Category (leave blank to auto-classify)</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} style={fieldStyle}>
+              <option value="">Auto-classify from description</option>
+              {categoryGroups.map(({ group, categories: cats }) => (
+                <optgroup key={group} label={group}>
+                  {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          <p style={{ margin: 0, fontSize: '0.7rem', color: '#64748b', lineHeight: 1.5 }}>
+            Entries on bank/CC accounts are auto-verified when the matching statement is uploaded
+            (same account &amp; amount within 3 days). Cash entries always count directly.
+          </p>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <button className="btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={save} disabled={!valid}>Add Entry</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

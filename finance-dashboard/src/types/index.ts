@@ -29,7 +29,12 @@ export type AccountType =
   | 'SBI Credit Card'
   | 'ICICI Credit Card'
   | 'Paytm Wallet'
+  | 'Cash'
   | 'Unknown';
+
+// sourceFile sentinel for hand-entered (kakeibo) transactions — never wiped by
+// deleteBySourceFile on a statement, and used to match against statement lines.
+export const MANUAL_SOURCE = 'Manual Entry';
 
 export type PaymentMethod =
   | 'UPI'
@@ -64,6 +69,7 @@ export interface Transaction {
   isCorrelationPair?: boolean; // true if this is a CC payment that matches a CC statement
   month: string; // YYYY-MM for easy grouping
   createdAt: string;
+  updatedAt?: string; // set on edits; drives last-write-wins in Drive sync merges
 }
 
 export interface Category {

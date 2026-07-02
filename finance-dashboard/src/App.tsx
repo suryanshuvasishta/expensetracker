@@ -18,7 +18,10 @@ export default function App() {
   const theme = useStore(s => s.theme);
 
   useEffect(() => {
-    loadAll();
+    loadAll().then(() => {
+      // Start Google Drive auto-sync if this device is connected (no-op otherwise)
+      import('./services/driveSync').then(m => m.initAutoSync());
+    });
   }, []);
 
   useEffect(() => {

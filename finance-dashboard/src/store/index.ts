@@ -91,9 +91,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   async updateTransaction(id, patch) {
-    await db.transactions.update(id, patch);
+    const stamped = { ...patch, updatedAt: new Date().toISOString() };
+    await db.transactions.update(id, stamped);
     set(state => ({
-      transactions: state.transactions.map(t => t.id === id ? { ...t, ...patch } : t),
+      transactions: state.transactions.map(t => t.id === id ? { ...t, ...stamped } : t),
     }));
   },
 
