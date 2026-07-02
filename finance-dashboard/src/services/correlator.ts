@@ -1,4 +1,5 @@
 import type { Transaction } from '../types';
+import { MANUAL_SOURCE } from '../types';
 
 export const CC_ACCOUNTS = ['Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card'];
 export const BANK_ACCOUNTS = ['HDFC Bank', 'ICICI Bank'];
@@ -103,6 +104,54 @@ export function correlateTransactions(transactions: Transaction[]): Transaction[
           txns[paytmIdx] = {
             ...txns[paytmIdx],
             correlatedIds: [bankTxn.id],
+          };
+        }
+        break;
+      }
+    }
+  }
+
+  // Kakeibo validation: match manual (hand-entered) transactions against statement
+  // lines on the same account — statement wins: the manual entry is marked as a
+  // correlation pair (hidden from spend totals) and carries correlatedIds as its
+  // "verified" flag. Cash entries have no statement to match and always count.
+  const manualEntries = txns.filter(t =>
+    t.sourceFile === MANUAL_SOURCE && t.account !== 'Cash' && !matched.has(t.id)
+  );
+  const statementTxns = txns.filter(t => t.sourceFile !== MANUAL_SOURCE);
+
+  for (const manual of manualEntries) {
+    const manualDate = new Date(manual.date).getTime();
+
+    for (const stmt of statementTxns) {
+      if (matched.has(stmt.id)) continue;
+      if (stmt.account !== manual.account || stmt.type !== manual.type) continue;
+      if (Math.abs(stmt.amount - manual.amount) > 1) continue;
+
+      const dayDiff = Math.abs(manualDate - new Date(stmt.date).getTime()) / (1000 * 60 * 60 * 24);
+      if (dayDiff <= 3) {
+        matched.add(manual.id);
+        matched.add(stmt.id);
+
+        const manualIdx = txns.findIndex(t => t.id === manual.id);
+        const stmtIdx = txns.findIndex(t => t.id === stmt.id);
+
+        if (manualIdx >= 0) {
+          txns[manualIdx] = {
+            ...txns[manualIdx],
+            correlatedIds: [stmt.id],
+            isCorrelationPair: true, // statement wins in totals
+          };
+        }
+        if (stmtIdx >= 0) {
+          txns[stmtIdx] = {
+            ...txns[stmtIdx],
+            // carry the manually chosen category onto the statement line if the
+            // statement side only got the generic fallback
+            category: (!txns[stmtIdx].category || txns[stmtIdx].category === 'Other Expenses') && manual.category
+              ? manual.category
+              : txns[stmtIdx].category,
+            correlatedIds: [manual.id],
           };
         }
         break;

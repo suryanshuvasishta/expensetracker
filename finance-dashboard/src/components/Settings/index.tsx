@@ -6,6 +6,7 @@ import { DEFAULT_CATEGORIES } from '../../db/database';
 import { fetchCategoriesFromSheet, parseCategoriesFromCSV } from '../../services/google-drive';
 import { exportSnapshot, importSnapshot, getCurrentFY } from '../../services/snapshot';
 import { exportTransactionsCSV, importTransactionsCSV } from '../../services/csvBackup';
+import * as driveSync from '../../services/driveSync';
 import type { Category, Owner } from '../../types';
 import { GROUP_ORDER } from '../../types';
 import { generateId } from '../../parsers/base';
@@ -24,6 +25,51 @@ export function SettingsPage() {
   const [importing, setImporting] = useState(false);
   const [txnCsvMsg, setTxnCsvMsg] = useState('');
   const [txnCsvImporting, setTxnCsvImporting] = useState(false);
+
+  // Google Drive sync state
+  const [gClientId, setGClientId] = useState(driveSync.getClientId());
+  const [deviceOwner, setDeviceOwnerState] = useState<string>(driveSync.getDeviceOwner());
+  const [driveConnected, setDriveConnected] = useState(driveSync.isConnected());
+  const [driveSyncing, setDriveSyncing] = useState(false);
+  const [driveMsg, setDriveMsg] = useState('');
+  const [lastSync, setLastSync] = useState(driveSync.getLastSync());
+
+  async function handleDriveConnect() {
+    try {
+      driveSync.setClientId(gClientId);
+      if (deviceOwner) driveSync.setDeviceOwner(deviceOwner as Owner);
+      await driveSync.connect();
+      setDriveConnected(true);
+      setDriveMsg('Connected to Google Drive! Use "Sync now" to run the first sync.');
+    } catch (e: any) {
+      setDriveMsg(`Connect error: ${e.message}`);
+    }
+  }
+
+  async function handleDriveSync() {
+    setDriveSyncing(true);
+    setDriveMsg('');
+    try {
+      if (deviceOwner) driveSync.setDeviceOwner(deviceOwner as Owner);
+      const result = await driveSync.syncNow();
+      setLastSync(driveSync.getLastSync());
+      setDriveMsg(
+        result.pulledFrom.length > 0
+          ? `Synced! Merged ${result.mergedTransactions} transactions from ${result.pulledFrom.join(', ')}; pushed this device's data and monthly backups.`
+          : 'Synced! Pushed this device\'s data and monthly backups (no other device files found yet).'
+      );
+    } catch (e: any) {
+      setDriveMsg(`Sync error: ${e.message}`);
+    } finally {
+      setDriveSyncing(false);
+    }
+  }
+
+  function handleDriveDisconnect() {
+    driveSync.disconnect();
+    setDriveConnected(false);
+    setDriveMsg('Disconnected. Your local data is untouched.');
+  }
 
   async function syncFromSheet() {
     if (!sheetId || !accessToken) {
@@ -137,6 +183,57 @@ export function SettingsPage() {
     <div style={{ flex: 1, overflow: 'auto' }}>
       <Header title="Settings" />
       <div style={{ padding: '1.5rem', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+        {/* Google Drive Sync */}
+        <div className="card" style={{ borderColor: 'rgba(96,165,250,0.35)' }}>
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>☁️ Google Drive Sync</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: '0 0 1rem', lineHeight: 1.6 }}>
+            Two-way sync between you and Khushboo via a shared Drive folder (<code style={{ background: 'var(--bg-main)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem' }}>FinanceDashboardSync</code>).
+            Each device pushes its data and pulls the other's; monthly backups (CSV + JSON for Suryanshu, Khushboo, and Combined)
+            are rewritten on every sync. One-time setup: create a Google OAuth Client ID —{' '}
+            <a href="https://github.com/suryanshuvasishta/expensetracker/blob/main/finance-dashboard/DRIVE_SYNC_SETUP.md" target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa' }}>step-by-step guide</a>.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: '0.75rem' }}>
+              <div>
+                <label style={{ fontSize: '0.8125rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Google OAuth Client ID</label>
+                <input value={gClientId} onChange={e => setGClientId(e.target.value)} placeholder="xxxxx.apps.googleusercontent.com" />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8125rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>This device belongs to</label>
+                <select value={deviceOwner} onChange={e => setDeviceOwnerState(e.target.value)} style={{ width: '100%' }}>
+                  <option value="">— select —</option>
+                  <option value="Suryanshu">Suryanshu</option>
+                  <option value="Khushboo">Khushboo</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              {!driveConnected ? (
+                <button className="btn-primary" onClick={handleDriveConnect} disabled={!gClientId.trim() || !deviceOwner}>
+                  Connect Google Drive
+                </button>
+              ) : (
+                <>
+                  <button className="btn-primary" onClick={handleDriveSync} disabled={driveSyncing} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <RefreshCw size={14} className={driveSyncing ? 'spinning' : ''} />
+                    {driveSyncing ? 'Syncing…' : 'Sync now'}
+                  </button>
+                  <button className="btn-ghost" onClick={handleDriveDisconnect}>Disconnect</button>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                    ✓ Connected{lastSync ? ` · last sync ${new Date(lastSync).toLocaleString('en-IN')}` : ' · not synced yet'}
+                    {' · auto-syncs on app open and ~20s after changes'}
+                  </span>
+                </>
+              )}
+            </div>
+            {driveMsg && (
+              <div style={{ padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8125rem', background: driveMsg.includes('error') ? 'rgba(239,68,68,0.1)' : 'rgba(74,222,128,0.1)', color: driveMsg.includes('error') ? '#f87171' : '#4ade80' }}>
+                {driveMsg}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Snapshots — Export & Import */}
         <div className="card">

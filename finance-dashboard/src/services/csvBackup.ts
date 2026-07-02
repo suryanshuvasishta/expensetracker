@@ -25,14 +25,17 @@ function txnToRow(t: Transaction): string {
   }).join(',');
 }
 
+/** Serialize transactions to the full-fidelity backup CSV format (also used by Drive sync). */
+export function buildTransactionsCSV(txns: Transaction[]): string {
+  const sorted = [...txns].sort((a, b) => a.date.localeCompare(b.date));
+  return COLUMNS.join(',') + '\n' + sorted.map(txnToRow).join('\n');
+}
+
 export async function exportTransactionsCSV(owner: Owner | 'All', filenameSuffix: string): Promise<void> {
   const all = await db.transactions.toArray();
   const filtered = owner === 'All' ? all : all.filter(t => t.owner === owner);
-  filtered.sort((a, b) => a.date.localeCompare(b.date));
 
-  const header = COLUMNS.join(',');
-  const rows = filtered.map(txnToRow);
-  const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
+  const blob = new Blob([buildTransactionsCSV(filtered)], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
