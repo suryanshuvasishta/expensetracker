@@ -1,29 +1,12 @@
 import type { Investment, Liability } from '../../types';
+import { fmtCompact as fmt } from '../../utils/format';
+import { ASSET_CLASS_COLORS as ASSET_COLORS } from '../../theme/palette';
 
 interface Props {
   investments: Investment[];
   liabilities: Liability[];
   selectedOwner: string;
 }
-
-function fmt(n: number) {
-  if (n >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + 'Cr';
-  if (n >= 1_00_000) return '₹' + (n / 1_00_000).toFixed(2) + 'L';
-  return '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
-}
-
-const ASSET_COLORS: Record<string, string> = {
-  'FD': '#facc15',
-  'Debt/Liquid MF': '#60a5fa',
-  'Equity MF': '#4ade80',
-  'ETF': '#34d399',
-  'Stocks': '#a78bfa',
-  'Real Estate': '#fb923c',
-  'Gold': '#fbbf24',
-  'NPS': '#38bdf8',
-  'PPF/SSY': '#86efac',
-  'Other': '#94a3b8',
-};
 
 export function NetWorthCard({ investments, liabilities, selectedOwner }: Props) {
   const filtInv = selectedOwner === 'All'

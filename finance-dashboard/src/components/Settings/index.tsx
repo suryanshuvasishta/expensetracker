@@ -13,7 +13,7 @@ import { generateId } from '../../parsers/base';
 const ALL_GROUPS = [...GROUP_ORDER, 'Income', 'System'];
 
 export function SettingsPage() {
-  const { categories, setCategories, rerunCorrelation, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, selectedMonth, loadAll } = useStore();
+  const { categories, setCategories, rerunCorrelation, recategorizeUncategorized, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, selectedMonth, loadAll } = useStore();
   const [editCats, setEditCats] = useState<Category[]>([...categories]);
   const [sheetId, setSheetId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -51,8 +51,13 @@ export function SettingsPage() {
 
   async function saveCategories() {
     await setCategories(editCats);
+    const recategorized = await recategorizeUncategorized();
     await rerunCorrelation();
-    setSyncMsg('Categories saved and transactions re-categorized!');
+    setSyncMsg(
+      recategorized > 0
+        ? `Categories saved — ${recategorized} previously uncategorized transactions matched the new keywords!`
+        : 'Categories saved and transactions re-categorized!'
+    );
   }
 
   function addCategory() {
@@ -352,16 +357,21 @@ export function SettingsPage() {
         <div className="card" style={{ borderColor: 'rgba(239,68,68,0.3)' }}>
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600, color: '#f87171' }}>Data</h3>
           <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: '0 0 0.75rem' }}>
-            All transaction data is stored in your browser's IndexedDB. It never leaves your device.
-            Clear it here to start fresh.
+            All data is stored in your browser's IndexedDB. It never leaves your device.
+            Clearing removes transactions, uploads, budgets, portfolio, and learned rules
+            (category definitions are kept). Export a snapshot first if you might want it back.
           </p>
           <button
             className="btn-ghost"
             onClick={async () => {
-              if (confirm('Delete ALL transaction data? This cannot be undone.')) {
+              if (confirm('Delete ALL data — transactions, uploads, budgets, investments, liabilities, and learned rules? This cannot be undone.')) {
                 const { db } = await import('../../db/database');
                 await db.transactions.clear();
                 await db.uploadedFiles.clear();
+                await db.budgets.clear();
+                await db.investments.clear();
+                await db.liabilities.clear();
+                await db.categoryRules.clear();
                 window.location.reload();
               }
             }}

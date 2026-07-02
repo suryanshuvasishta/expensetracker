@@ -6,31 +6,12 @@ import type { Investment, AssetClass, Owner, Liability, LiabilityType } from '..
 import { ASSET_CLASSES, OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
 import { extractTextFromPDF } from '../../parsers';
+import { fmtCompact as fmt, fmtINR as fmtFull } from '../../utils/format';
+import { ASSET_CLASS_COLORS as PALETTE_ASSET_COLORS } from '../../theme/palette';
 
 const LIABILITY_TYPES: LiabilityType[] = ['Home Loan', 'Car Loan', 'Personal Loan', 'Credit Card', 'Other'];
 
-const ASSET_CLASS_COLORS: Record<AssetClass, string> = {
-  'FD': '#facc15',
-  'Debt/Liquid MF': '#60a5fa',
-  'Equity MF': '#4ade80',
-  'ETF': '#34d399',
-  'Stocks': '#a78bfa',
-  'Real Estate': '#fb923c',
-  'Gold': '#fbbf24',
-  'NPS': '#38bdf8',
-  'PPF/SSY': '#86efac',
-  'Other': '#94a3b8',
-};
-
-function fmt(n: number) {
-  if (n >= 1_00_00_000) return '₹' + (n / 1_00_00_000).toFixed(2) + 'Cr';
-  if (n >= 1_00_000) return '₹' + (n / 1_00_000).toFixed(2) + 'L';
-  return '₹' + Math.round(n).toLocaleString('en-IN');
-}
-
-function fmtFull(n: number) {
-  return '₹' + Math.round(n).toLocaleString('en-IN');
-}
+const ASSET_CLASS_COLORS = PALETTE_ASSET_COLORS as Record<AssetClass, string>;
 
 const EMPTY_INVESTMENT = (owner: Owner): Omit<Investment, 'id'> => ({
   owner,
