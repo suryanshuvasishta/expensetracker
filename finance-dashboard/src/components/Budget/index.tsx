@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import type { MonthlyBudget, InvestmentLine, Owner } from '../../types';
 import { buildCategoryGroups, isNonBudgetGroup } from '../../types';
+import { filterTxns, totalIncome } from '../../services/selectors';
 import { generateId } from '../../parsers/base';
 
 const INVESTMENT_GOALS = ['Retirement', "Children's Fund", 'Home Ownership', 'Emergency', 'Consumer Durables', 'Other'] as const;
@@ -153,6 +154,10 @@ export function BudgetPage() {
           <Row label="Professional Tax" value={<NumInput value={budget.professionalTax} onChange={v => patch('professionalTax', v)} />} indent />
           <Row label="Other Deductions" value={<NumInput value={budget.otherDeductions} onChange={v => patch('otherDeductions', v)} />} indent />
           <Row label="In Hand Salary" value={<span style={{ color: '#4ade80', fontWeight: 600 }}>{fmt(inHand)}</span>} highlight />
+          <Row
+            label="Actual income received (from statements)"
+            value={<span style={{ color: '#60a5fa', fontWeight: 600 }}>{fmt(totalIncome(filterTxns(transactions, { month: selectedMonth, owner })))}</span>}
+          />
         </Section>
 
         {/* Investments */}

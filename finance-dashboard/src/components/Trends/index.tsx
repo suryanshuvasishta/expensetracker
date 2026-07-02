@@ -2,36 +2,34 @@ import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
-
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+import { TrendChart } from '../Dashboard/TrendChart';
+import { filterTxns, spendTxns, isSpend, formatMonthLabel } from '../../services/selectors';
+import type { Category, Transaction } from '../../types';
 
 export function TrendsPage() {
-  const { transactions, categories } = useStore();
+  const { transactions, categories, selectedOwner } = useStore();
   const [view, setView] = useState<'category' | 'account' | 'method'>('category');
 
-  const months = [...new Set(transactions.map(t => t.month))].sort().slice(-12);
+  const ownerTxns = filterTxns(transactions, { owner: selectedOwner });
+  const months = [...new Set(ownerTxns.map(t => t.month))].sort().slice(-12);
 
-  const topCategories = getTopN(
-    transactions.filter(t => t.type === 'debit' && !t.isCorrelationPair),
-    t => t.category || 'Other',
-    6
-  );
+  const topCategories = getTopN(spendTxns(ownerTxns), t => t.category || 'Other', 6);
 
   const stackedData = months.map(m => {
-    const row: Record<string, any> = { month: formatMonth(m) };
-    const mTxns = transactions.filter(t => t.month === m && t.type === 'debit' && !t.isCorrelationPair);
+    const row: Record<string, any> = { month: formatMonthLabel(m) };
+    const mTxns = spendTxns(ownerTxns.filter(t => t.month === m));
 
     if (view === 'category') {
       for (const cat of topCategories) {
         row[cat] = Math.round(mTxns.filter(t => (t.category || 'Other') === cat).reduce((s, t) => s + t.amount, 0));
       }
     } else if (view === 'account') {
-      const accounts = [...new Set(transactions.map(t => t.account))];
+      const accounts = [...new Set(ownerTxns.map(t => t.account))];
       for (const acc of accounts) {
         row[acc] = Math.round(mTxns.filter(t => t.account === acc).reduce((s, t) => s + t.amount, 0));
       }
     } else {
-      const methods = [...new Set(transactions.map(t => t.paymentMethod))];
+      const methods = [...new Set(ownerTxns.map(t => t.paymentMethod))];
       for (const m2 of methods) {
         row[m2] = Math.round(mTxns.filter(t => t.paymentMethod === m2).reduce((s, t) => s + t.amount, 0));
       }
@@ -40,15 +38,24 @@ export function TrendsPage() {
   });
 
   const keys = view === 'category' ? topCategories :
-    view === 'account' ? [...new Set(transactions.map(t => t.account))] :
-    [...new Set(transactions.map(t => t.paymentMethod))];
+    view === 'account' ? [...new Set(ownerTxns.map(t => t.account))] :
+    [...new Set(ownerTxns.map(t => t.paymentMethod))];
 
-  const COLORS = ['#818cf8', '#f472b6', '#fb923c', '#34d399', '#22d3ee', '#a78bfa', '#60a5fa', '#fbbf24', '#f87171'];
+  const FALLBACK_COLORS = ['#818cf8', '#f472b6', '#fb923c', '#34d399', '#22d3ee', '#a78bfa', '#60a5fa', '#fbbf24', '#f87171'];
+  // Category view reuses the same DB-backed colors as the Dashboard donut, so a
+  // category is the same color on every page.
+  const colorFor = (key: string, i: number) =>
+    view === 'category'
+      ? (categories.find(c => c.name === key)?.color || FALLBACK_COLORS[i % FALLBACK_COLORS.length])
+      : FALLBACK_COLORS[i % FALLBACK_COLORS.length];
 
   return (
     <div style={{ flex: 1, overflow: 'auto' }}>
       <Header title="Trends" />
       <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1200px' }}>
+
+        {/* 12-month income vs expenses */}
+        <TrendChart transactions={ownerTxns} />
 
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           {(['category', 'account', 'method'] as const).map(v => (
@@ -86,7 +93,7 @@ export function TrendsPage() {
                 />
                 <Legend formatter={v => <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{v}</span>} />
                 {keys.map((k, i) => (
-                  <Bar key={k} dataKey={k} stackId="a" fill={COLORS[i % COLORS.length]} radius={i === keys.length - 1 ? [4, 4, 0, 0] : undefined} />
+                  <Bar key={k} dataKey={k} stackId="a" fill={colorFor(k, i)} radius={i === keys.length - 1 ? [4, 4, 0, 0] : undefined} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -107,7 +114,7 @@ export function TrendsPage() {
                 </tr>
               </thead>
               <tbody>
-                {getCategorySummary(transactions, categories).map(row => (
+                {getCategorySummary(ownerTxns, categories).map(row => (
                   <tr key={row.name}>
                     <td>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -129,27 +136,22 @@ export function TrendsPage() {
   );
 }
 
-function formatMonth(m: string): string {
-  const [y, month] = m.split('-');
-  return `${MONTHS_SHORT[parseInt(month) - 1]} '${y.slice(2)}`;
-}
-
-function getTopN(txns: { amount: number }[], keyFn: (t: any) => string, n: number): string[] {
+function getTopN(txns: Transaction[], keyFn: (t: Transaction) => string, n: number): string[] {
   const totals: Record<string, number> = {};
   for (const t of txns) {
     const k = keyFn(t);
-    totals[k] = (totals[k] || 0) + (t as any).amount;
+    totals[k] = (totals[k] || 0) + t.amount;
   }
   return Object.entries(totals).sort(([, a], [, b]) => b - a).slice(0, n).map(([k]) => k);
 }
 
-function getCategorySummary(transactions: any[], categories: any[]) {
-  const debits = transactions.filter(t => t.type === 'debit' && !t.isCorrelationPair);
+function getCategorySummary(transactions: Transaction[], categories: Category[]) {
+  const debits = transactions.filter(isSpend);
   const summary: Record<string, { total: number; count: number; color: string }> = {};
   for (const t of debits) {
     const cat = t.category || 'Other';
     if (!summary[cat]) {
-      const color = categories.find((c: any) => c.name === cat)?.color || '#94a3b8';
+      const color = categories.find(c => c.name === cat)?.color || '#94a3b8';
       summary[cat] = { total: 0, count: 0, color };
     }
     summary[cat].total += t.amount;

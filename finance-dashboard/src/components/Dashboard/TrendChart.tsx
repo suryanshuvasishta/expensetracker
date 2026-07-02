@@ -1,20 +1,19 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import type { Transaction } from '../../types';
+import { isSpend, isIncome, formatMonthLabel } from '../../services/selectors';
 
 interface Props {
   transactions: Transaction[];
 }
-
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function TrendChart({ transactions }: Props) {
   const byMonth: Record<string, { debit: number; credit: number }> = {};
 
   for (const t of transactions) {
     if (!byMonth[t.month]) byMonth[t.month] = { debit: 0, credit: 0 };
-    if (t.type === 'debit' && !t.isCorrelationPair) {
+    if (isSpend(t)) {
       byMonth[t.month].debit += t.amount;
-    } else if (t.type === 'credit') {
+    } else if (isIncome(t)) {
       byMonth[t.month].credit += t.amount;
     }
   }
@@ -22,14 +21,11 @@ export function TrendChart({ transactions }: Props) {
   const data = Object.entries(byMonth)
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-12)
-    .map(([month, vals]) => {
-      const [y, m] = month.split('-');
-      return {
-        month: `${MONTHS_SHORT[parseInt(m) - 1]} '${y.slice(2)}`,
-        Expenses: Math.round(vals.debit),
-        Income: Math.round(vals.credit),
-      };
-    });
+    .map(([month, vals]) => ({
+      month: formatMonthLabel(month),
+      Expenses: Math.round(vals.debit),
+      Income: Math.round(vals.credit),
+    }));
 
   if (data.length === 0) {
     return (
@@ -66,6 +62,7 @@ export function TrendChart({ transactions }: Props) {
             formatter={(v: any) => `₹${Number(v).toLocaleString('en-IN')}`}
             contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#f1f5f9', fontSize: '0.8125rem' }}
           />
+          <Legend formatter={(v) => <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{v}</span>} />
           <Area type="monotone" dataKey="Income" stroke="#4ade80" fill="url(#colorIncome)" strokeWidth={2} dot={false} />
           <Area type="monotone" dataKey="Expenses" stroke="#f87171" fill="url(#colorExpenses)" strokeWidth={2} dot={false} />
         </AreaChart>

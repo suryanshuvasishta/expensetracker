@@ -4,6 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { TransactionsPage } from './components/Transactions';
 import { UploadPage } from './components/Upload';
 import { TrendsPage } from './components/Trends';
+import { CashFlowPage } from './components/CashFlow';
 import { SettingsPage } from './components/Settings';
 import { BudgetPage } from './components/Budget';
 import { PortfolioPage } from './components/Portfolio';
@@ -37,6 +38,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case 'dashboard': return <Dashboard />;
+      case 'cashflow': return <CashFlowPage />;
       case 'transactions': return <TransactionsPage />;
       case 'upload': return <UploadPage />;
       case 'trends': return <TrendsPage />;
