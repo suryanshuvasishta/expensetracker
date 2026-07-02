@@ -3,34 +3,26 @@ import { Header } from '../Layout/Header';
 import { StatCard } from './StatCard';
 import { CategoryChart } from './CategoryChart';
 import { PaymentMethodChart } from './PaymentMethodChart';
-import { TrendChart } from './TrendChart';
+import { CashFlowChart } from './CashFlowChart';
 import { TopMerchants } from './TopMerchants';
 import { NetWorthCard } from './NetWorthCard';
-import { ArrowDownRight, ArrowUpRight, Activity, CreditCard } from 'lucide-react';
+import { filterTxns, totalSpend, totalIncome, ccSpend, spendTxns, incomeTxns, momDelta } from '../../services/selectors';
+import { ArrowDownRight, ArrowUpRight, PiggyBank, CreditCard } from 'lucide-react';
 
 export function Dashboard() {
   const { transactions, categories, selectedMonth, selectedOwner, investments, liabilities } = useStore();
 
-  const monthTxns = transactions.filter(t => {
-    if (t.month !== selectedMonth) return false;
-    if (selectedOwner !== 'All' && t.owner !== selectedOwner) return false;
-    return true;
-  });
-  const allTxns = transactions;
+  const monthTxns = filterTxns(transactions, { month: selectedMonth, owner: selectedOwner });
 
-  const totalDebit = monthTxns
-    .filter(t => t.type === 'debit' && !t.isCorrelationPair)
-    .reduce((s, t) => s + t.amount, 0);
+  const income = totalIncome(monthTxns);
+  const spend = totalSpend(monthTxns);
+  const savings = income - spend;
+  const savingsRate = income > 0 ? (savings / income) * 100 : null;
+  const cc = ccSpend(monthTxns);
 
-  const totalCredit = monthTxns
-    .filter(t => t.type === 'credit')
-    .reduce((s, t) => s + t.amount, 0);
-
-  const netFlow = totalCredit - totalDebit;
-
-  const ccSpend = monthTxns
-    .filter(t => t.type === 'debit' && ['Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card'].includes(t.account))
-    .reduce((s, t) => s + t.amount, 0);
+  const incomeTrend = momDelta(transactions, selectedMonth, selectedOwner, totalIncome);
+  const spendTrend = momDelta(transactions, selectedMonth, selectedOwner, totalSpend);
+  const ccTrend = momDelta(transactions, selectedMonth, selectedOwner, ccSpend);
 
   const fmt = (n: number) => `₹${Math.abs(Math.round(n)).toLocaleString('en-IN')}`;
 
@@ -39,52 +31,58 @@ export function Dashboard() {
       <Header title="Dashboard" />
       <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1400px' }}>
 
-        {/* Stat Cards */}
+        {/* Row 1 — the month at a glance */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
           <StatCard
-            title="Total Expenses"
-            value={fmt(totalDebit)}
-            subtitle={`${monthTxns.filter(t => t.type === 'debit' && !t.isCorrelationPair).length} transactions`}
-            color="#f87171"
-            icon={<ArrowDownRight size={18} />}
-          />
-          <StatCard
-            title="Total Income"
-            value={fmt(totalCredit)}
-            subtitle={`${monthTxns.filter(t => t.type === 'credit').length} transactions`}
+            title="Income"
+            value={fmt(income)}
+            subtitle={`${incomeTxns(monthTxns).length} credits`}
+            trend={incomeTrend}
+            goodDirection="up"
             color="#4ade80"
             icon={<ArrowUpRight size={18} />}
           />
           <StatCard
-            title="Net Flow"
-            value={`${netFlow >= 0 ? '+' : '-'}${fmt(netFlow)}`}
-            subtitle={netFlow >= 0 ? 'Surplus' : 'Deficit'}
-            color={netFlow >= 0 ? '#4ade80' : '#f87171'}
-            icon={<Activity size={18} />}
+            title="Expenses"
+            value={fmt(spend)}
+            subtitle={`${spendTxns(monthTxns).length} transactions`}
+            trend={spendTrend}
+            goodDirection="down"
+            color="#f87171"
+            icon={<ArrowDownRight size={18} />}
+          />
+          <StatCard
+            title="Savings"
+            value={`${savings >= 0 ? '+' : '-'}${fmt(savings)}`}
+            subtitle={savingsRate !== null ? `${savingsRate.toFixed(0)}% of income saved` : 'No income recorded'}
+            color={savings >= 0 ? '#4ade80' : '#f87171'}
+            icon={<PiggyBank size={18} />}
           />
           <StatCard
             title="Credit Card Spend"
-            value={fmt(ccSpend)}
-            subtitle="Axis + SBI + ICICI CC"
+            value={fmt(cc)}
+            subtitle={spend > 0 ? `${((cc / spend) * 100).toFixed(0)}% of expenses` : undefined}
+            trend={ccTrend}
+            goodDirection="down"
             color="#c084fc"
             icon={<CreditCard size={18} />}
           />
         </div>
 
-        {/* Net Worth Card */}
-        <NetWorthCard investments={investments} liabilities={liabilities} selectedOwner={selectedOwner} />
+        {/* Row 2 — cash flow hero */}
+        <CashFlowChart transactions={transactions} endMonth={selectedMonth} owner={selectedOwner} />
 
-        {/* Trend Chart (full width) */}
-        <TrendChart transactions={allTxns} />
-
-        {/* Category + Payment Method */}
+        {/* Row 3 — where money goes */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <CategoryChart transactions={monthTxns} categories={categories} />
-          <PaymentMethodChart transactions={monthTxns} />
+          <TopMerchants transactions={monthTxns} />
         </div>
 
-        {/* Top Merchants */}
-        <TopMerchants transactions={monthTxns} />
+        {/* Row 4 — how it's paid + net worth */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <PaymentMethodChart transactions={monthTxns} />
+          <NetWorthCard investments={investments} liabilities={liabilities} selectedOwner={selectedOwner} />
+        </div>
 
       </div>
     </div>

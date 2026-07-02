@@ -1,7 +1,7 @@
 import type { Transaction } from '../types';
 
-const CC_ACCOUNTS = ['Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card'];
-const BANK_ACCOUNTS = ['HDFC Bank', 'ICICI Bank'];
+export const CC_ACCOUNTS = ['Axis Credit Card', 'SBI Credit Card', 'ICICI Credit Card'];
+export const BANK_ACCOUNTS = ['HDFC Bank', 'ICICI Bank'];
 const PAYTM_ACCOUNT = 'Paytm Wallet';
 
 /**

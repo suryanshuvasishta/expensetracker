@@ -1,4 +1,4 @@
-import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet, PieChart, Sun, Moon } from 'lucide-react';
+import { BarChart3, Upload, List, Settings, TrendingUp, ChevronLeft, ChevronRight, Wallet, PieChart, Sun, Moon, ArrowLeftRight } from 'lucide-react';
 import { useStore } from '../../store';
 import type { Owner } from '../../types';
 
@@ -11,11 +11,12 @@ interface Props {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { id: 'cashflow', label: 'Cash Flow', icon: ArrowLeftRight },
   { id: 'budget', label: 'Budget', icon: Wallet },
-  { id: 'portfolio', label: 'Portfolio', icon: PieChart },
   { id: 'transactions', label: 'Transactions', icon: List },
-  { id: 'upload', label: 'Upload', icon: Upload },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
+  { id: 'portfolio', label: 'Portfolio', icon: PieChart },
+  { id: 'upload', label: 'Upload', icon: Upload },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 

@@ -1,5 +1,6 @@
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Transaction, Category } from '../../types';
+import { byCategory } from '../../services/selectors';
 
 interface Props {
   transactions: Transaction[];
@@ -21,13 +22,7 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
 }
 
 export function CategoryChart({ transactions, categories }: Props) {
-  const debits = transactions.filter(t => t.type === 'debit' && !t.isCorrelationPair);
-
-  const breakdown: Record<string, number> = {};
-  for (const t of debits) {
-    const cat = t.category || 'Other';
-    breakdown[cat] = (breakdown[cat] || 0) + t.amount;
-  }
+  const breakdown = byCategory(transactions);
 
   const data = Object.entries(breakdown)
     .map(([name, value]) => ({

@@ -1,5 +1,6 @@
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import type { Transaction } from '../../types';
+import { byPaymentMethod } from '../../services/selectors';
 
 const METHOD_COLORS: Record<string, string> = {
   'UPI': '#818cf8',
@@ -20,13 +21,7 @@ interface Props {
 }
 
 export function PaymentMethodChart({ transactions }: Props) {
-  const debits = transactions.filter(t => t.type === 'debit');
-
-  const breakdown: Record<string, number> = {};
-  for (const t of debits) {
-    const m = t.paymentMethod || 'Other';
-    breakdown[m] = (breakdown[m] || 0) + t.amount;
-  }
+  const breakdown = byPaymentMethod(transactions);
 
   const data = Object.entries(breakdown)
     .map(([method, amount]) => ({ method, amount: Math.round(amount) }))

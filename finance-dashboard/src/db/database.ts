@@ -164,6 +164,8 @@ export const DEFAULT_CATEGORIES: Category[] = [
   // Income (not shown in budget actuals)
   { id: 'salary', name: 'Salary', keywords: ['salary', 'payroll', 'ctc', 'compensation', 'wages'], color: '#22c55e', icon: '💰', group: 'Income' },
   { id: 'dividends', name: 'Dividends', keywords: ['dividend'], color: '#16a34a', icon: '📊', group: 'Income' },
+  { id: 'interest-income', name: 'Interest', keywords: ['int.pd', 'interest paid', 'interest credit', 'sb int', 'fd interest', 'credit interest'], color: '#4ade80', icon: '🏦', group: 'Income' },
+  { id: 'refunds-cashback', name: 'Refunds & Cashback', keywords: ['refund', 'cashback', 'reversal', 'chargeback'], color: '#86efac', icon: '↩️', group: 'Income' },
 
   // System (not shown in budget)
   { id: 'investment-txn', name: 'Investments', keywords: ['zerodha', 'groww', 'sip', 'mutual fund', 'nps', 'ppf', 'fd', 'stock', 'ipo', 'demat', 'smallcase', 'coin by zerodha', 'mf'], color: '#10b981', icon: '📈', group: 'System' },

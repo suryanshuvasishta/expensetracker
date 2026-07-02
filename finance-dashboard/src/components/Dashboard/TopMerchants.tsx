@@ -1,4 +1,5 @@
 import type { Transaction } from '../../types';
+import { spendTxns } from '../../services/selectors';
 
 interface Props {
   transactions: Transaction[];
@@ -15,7 +16,7 @@ function extractMerchant(narration: string): string {
 }
 
 export function TopMerchants({ transactions }: Props) {
-  const debits = transactions.filter(t => t.type === 'debit' && !t.isCorrelationPair);
+  const debits = spendTxns(transactions);
 
   const merchants: Record<string, { count: number; total: number }> = {};
   for (const t of debits) {
