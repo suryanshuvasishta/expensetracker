@@ -110,14 +110,22 @@ export function correlateTransactions(transactions: Transaction[]): Transaction[
     }
   }
 
-  // Dedup: same account, same date, same amount, similar narration → keep first
+  // Dedup: same account/date/amount/type AND same normalized narration → keep first.
+  // The narration fingerprint keeps two legitimate same-day, same-amount payments to
+  // different merchants from being dropped; true re-uploads of the same statement
+  // still collapse because the narration matches.
   const dedupKeys = new Set<string>();
   return txns.filter(t => {
-    const key = `${t.account}|${t.date}|${t.amount}|${t.type}`;
+    const key = `${t.account}|${t.date}|${t.amount}|${t.type}|${normalizeNarration(t.narration)}`;
     if (dedupKeys.has(key)) return false;
     dedupKeys.add(key);
     return true;
   });
+}
+
+/** Lowercase, strip whitespace and long digit runs (ref/txn numbers vary between statement exports). */
+export function normalizeNarration(narration: string): string {
+  return narration.toLowerCase().replace(/\d{6,}/g, '').replace(/\s+/g, '');
 }
 
 export function getNetSpend(transactions: Transaction[]): number {

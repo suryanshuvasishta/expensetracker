@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { PlusCircle, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { PlusCircle, Trash2, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import type { MonthlyBudget, InvestmentLine, Owner } from '../../types';
 import { buildCategoryGroups, isNonBudgetGroup } from '../../types';
-import { filterTxns, totalIncome } from '../../services/selectors';
+import { filterTxns, totalIncome, previousMonth } from '../../services/selectors';
 import { generateId } from '../../parsers/base';
 
 const INVESTMENT_GOALS = ['Retirement', "Children's Fund", 'Home Ownership', 'Emergency', 'Consumer Durables', 'Other'] as const;
@@ -61,7 +61,7 @@ function NumInput({ value, onChange, style }: { value: number; onChange: (v: num
 }
 
 export function BudgetPage() {
-  const { transactions, categories, saveBudget, getBudget, selectedMonth, setSelectedMonth, selectedOwner } = useStore();
+  const { transactions, categories, saveBudget, getBudget, selectedMonth, selectedOwner } = useStore();
   const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
   const nonBudgetCategoryNames = useMemo(
     () => new Set(categories.filter(c => isNonBudgetGroup(c.group)).map(c => c.name)),
@@ -87,6 +87,27 @@ export function BudgetPage() {
     await saveBudget(budget);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  // Copy-forward: offer last month's budget when this month hasn't been filled in yet
+  const isBudgetEmpty =
+    budget.grossSalary === 0 &&
+    Object.values(budget.categoryBudgets).every(v => !v) &&
+    budget.homeLoanEmi === 0;
+  const prevMonth = previousMonth(selectedMonth);
+  const prevBudget = getBudget(owner, prevMonth);
+
+  function copyFromPreviousMonth() {
+    if (!prevBudget) return;
+    setBudget({
+      ...prevBudget,
+      id: `${owner}:${selectedMonth}`,
+      owner,
+      month: selectedMonth,
+      investments: prevBudget.investments.map(inv => ({ ...inv, id: generateId() })),
+      categoryBudgets: { ...prevBudget.categoryBudgets },
+    });
+    setSaved(false);
   }
 
   // Derived
@@ -131,17 +152,16 @@ export function BudgetPage() {
       <Header title="Monthly Budget" />
       <div style={{ padding: '1.5rem', maxWidth: '960px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-        {/* Month selector + Save */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={e => setSelectedMonth(e.target.value)}
-            style={{ padding: '0.375rem 0.5rem', fontSize: '0.875rem', borderRadius: '8px', border: '1px solid #334155', background: '#1e293b', color: '#f1f5f9' }}
-          />
+        {/* Save + copy-forward */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <button className="btn-primary" onClick={handleSave}>
             {saved ? 'Saved!' : 'Save Budget'}
           </button>
+          {isBudgetEmpty && prevBudget && (
+            <button className="btn-ghost" onClick={copyFromPreviousMonth} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Copy size={14} /> Copy budget from {prevMonth}
+            </button>
+          )}
         </div>
 
         {/* Income */}

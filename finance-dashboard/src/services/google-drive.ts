@@ -34,16 +34,23 @@ export async function getGoogleAccessToken(clientId: string): Promise<string> {
   });
 }
 
+/** Imported categories keep their group when the sheet provides one; otherwise fall back
+ *  to the matching default category's group so grouping survives a round-trip. */
+function groupFor(name: string, provided?: string): string {
+  if (provided?.trim()) return provided.trim();
+  return DEFAULT_CATEGORIES.find(d => d.name.toLowerCase() === name.toLowerCase())?.group || 'Miscellaneous';
+}
+
 /**
  * Fetch categories from a Google Sheet.
- * Expects columns: Category Name | Keywords (comma-separated) | Color (hex)
+ * Expects columns: Category Name | Keywords (comma-separated) | Color (hex) | Icon | Group
  */
 export async function fetchCategoriesFromSheet(
   sheetId: string,
   accessToken: string,
   sheetName = 'Categories'
 ): Promise<Category[]> {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName)}!A:D`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName)}!A:E`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -64,6 +71,7 @@ export async function fetchCategoriesFromSheet(
       keywords: (row[1] || '').split(',').map(k => k.trim()).filter(Boolean),
       color: row[2]?.trim() || '#94a3b8',
       icon: row[3]?.trim() || '',
+      group: groupFor(row[0].trim(), row[4]),
     }));
 
   return categories.length > 0 ? categories : DEFAULT_CATEGORIES;
@@ -71,6 +79,7 @@ export async function fetchCategoriesFromSheet(
 
 /**
  * Parse categories from a raw CSV/TSV text export of the expense sheet.
+ * Columns: Name, keywords;semicolon;separated, #color, icon, group
  */
 export function parseCategoriesFromCSV(csvText: string): Category[] {
   const lines = csvText.split('\n').map(l => l.trim()).filter(Boolean);
@@ -78,12 +87,14 @@ export function parseCategoriesFromCSV(csvText: string): Category[] {
 
   const categories: Category[] = lines.slice(1).map((line, idx) => {
     const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, ''));
+    const name = parts[0] || `Category ${idx + 1}`;
     return {
       id: (parts[0] || `cat-${idx}`).toLowerCase().replace(/\s+/g, '-') + '-' + idx,
-      name: parts[0] || `Category ${idx + 1}`,
+      name,
       keywords: (parts[1] || '').split(';').map(k => k.trim()).filter(Boolean),
       color: parts[2] || '#94a3b8',
       icon: parts[3] || '',
+      group: groupFor(name, parts[4]),
     };
   }).filter(c => c.name);
 

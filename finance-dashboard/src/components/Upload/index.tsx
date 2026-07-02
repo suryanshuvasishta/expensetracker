@@ -4,6 +4,7 @@ import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2 } from 'luc
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { extractTextFromPDF, extractTransactionsFromXLS, parseStatement, finalizeTransactions, detectAccount } from '../../parsers';
+import { normalizeNarration } from '../../services/correlator';
 import type { AccountType, UploadedFile, Owner } from '../../types';
 import { OWNERS } from '../../types';
 import { generateId } from '../../parsers/base';
@@ -24,7 +25,7 @@ interface FileState {
 }
 
 export function UploadPage() {
-  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner } = useStore();
+  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner, transactions } = useStore();
   const [fileStates, setFileStates] = useState<FileState[]>([]);
   const [processing, setProcessing] = useState(false);
 
@@ -76,6 +77,25 @@ export function UploadPage() {
       }
 
       const finalized = finalizeTransactions(parsed, fs.file.name, fs.owner);
+
+      // Warn if this looks like a re-upload of an overlapping statement
+      const existingKeys = new Set(
+        transactions.map(t => `${t.account}|${t.date}|${t.amount}|${t.type}|${normalizeNarration(t.narration)}`)
+      );
+      const dupCount = finalized.filter(t =>
+        existingKeys.has(`${t.account}|${t.date}|${t.amount}|${t.type}|${normalizeNarration(t.narration)}`)
+      ).length;
+      if (dupCount > 0) {
+        const proceed = window.confirm(
+          `${dupCount} of ${finalized.length} transactions in "${fs.file.name}" already exist ` +
+          `(possibly an overlapping statement). Import anyway?\n\nDuplicates will be skipped automatically.`
+        );
+        if (!proceed) {
+          updateFileState(fs.id, { status: 'error', error: `Skipped — ${dupCount} of ${finalized.length} transactions already exist.` });
+          return;
+        }
+      }
+
       await addTransactions(finalized);
 
       const uploadRecord: UploadedFile = {

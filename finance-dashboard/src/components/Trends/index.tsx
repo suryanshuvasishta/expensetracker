@@ -3,12 +3,14 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { TrendChart } from '../Dashboard/TrendChart';
-import { filterTxns, spendTxns, isSpend, formatMonthLabel } from '../../services/selectors';
+import { filterTxns, spendTxns, isSpend, formatMonthLabel, byCategoryGroup, previousMonth, fyOf, fyMonthsUpTo } from '../../services/selectors';
+import { fmtINR } from '../../utils/format';
 import type { Category, Transaction } from '../../types';
 
 export function TrendsPage() {
-  const { transactions, categories, selectedOwner } = useStore();
+  const { transactions, categories, selectedOwner, selectedMonth } = useStore();
   const [view, setView] = useState<'category' | 'account' | 'method'>('category');
+  const [summaryRange, setSummaryRange] = useState<'fy' | 'all'>('fy');
 
   const ownerTxns = filterTxns(transactions, { owner: selectedOwner });
   const months = [...new Set(ownerTxns.map(t => t.month))].sort().slice(-12);
@@ -40,6 +42,22 @@ export function TrendsPage() {
   const keys = view === 'category' ? topCategories :
     view === 'account' ? [...new Set(ownerTxns.map(t => t.account))] :
     [...new Set(ownerTxns.map(t => t.paymentMethod))];
+
+  // Month-over-month comparison by category group (selected month vs previous)
+  const prevMonth = previousMonth(selectedMonth);
+  const curByGroup = byCategoryGroup(filterTxns(ownerTxns, { month: selectedMonth }), categories);
+  const prevByGroup = byCategoryGroup(filterTxns(ownerTxns, { month: prevMonth }), categories);
+  const momRows = [...new Set([...Object.keys(curByGroup), ...Object.keys(prevByGroup)])]
+    .map(group => {
+      const cur = curByGroup[group] || 0;
+      const prev = prevByGroup[group] || 0;
+      return { group, cur, prev, delta: cur - prev };
+    })
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  // Category summary range: current FY (Apr–Mar) or all time
+  const fyMonths = fyMonthsUpTo(selectedMonth);
+  const summaryTxns = summaryRange === 'fy' ? ownerTxns.filter(t => fyMonths.includes(t.month)) : ownerTxns;
 
   const FALLBACK_COLORS = ['#818cf8', '#f472b6', '#fb923c', '#34d399', '#22d3ee', '#a78bfa', '#60a5fa', '#fbbf24', '#f87171'];
   // Category view reuses the same DB-backed colors as the Dashboard donut, so a
@@ -100,9 +118,69 @@ export function TrendsPage() {
           )}
         </div>
 
+        {/* Month-over-month comparison */}
+        <div className="card">
+          <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>
+            This Month vs Last — {formatMonthLabel(selectedMonth)} vs {formatMonthLabel(prevMonth)}
+          </h3>
+          {momRows.length === 0 ? (
+            <p style={{ color: '#475569', fontSize: '0.875rem' }}>No spend recorded in either month.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>{formatMonthLabel(prevMonth)}</th>
+                    <th>{formatMonthLabel(selectedMonth)}</th>
+                    <th>Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {momRows.map(r => (
+                    <tr key={r.group}>
+                      <td>{r.group}</td>
+                      <td style={{ color: '#94a3b8' }}>{r.prev ? fmtINR(r.prev) : '—'}</td>
+                      <td style={{ color: '#cbd5e1' }}>{r.cur ? fmtINR(r.cur) : '—'}</td>
+                      <td style={{ color: r.delta > 0 ? '#f87171' : '#4ade80', fontWeight: 600 }}>
+                        {r.delta === 0 ? '—' : `${r.delta > 0 ? '+' : '−'}${fmtINR(Math.abs(r.delta))}`}
+                        {r.prev > 0 && r.delta !== 0 && (
+                          <span style={{ fontWeight: 400, fontSize: '0.75rem', marginLeft: '0.375rem', color: '#64748b' }}>
+                            ({r.delta > 0 ? '+' : ''}{((r.delta / r.prev) * 100).toFixed(0)}%)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 600 }}>
+                    <td>Total</td>
+                    <td style={{ color: '#94a3b8' }}>{fmtINR(momRows.reduce((s, r) => s + r.prev, 0))}</td>
+                    <td style={{ color: '#cbd5e1' }}>{fmtINR(momRows.reduce((s, r) => s + r.cur, 0))}</td>
+                    <td style={{ color: momRows.reduce((s, r) => s + r.delta, 0) > 0 ? '#f87171' : '#4ade80' }}>
+                      {(() => { const d = momRows.reduce((s, r) => s + r.delta, 0); return d === 0 ? '—' : `${d > 0 ? '+' : '−'}${fmtINR(Math.abs(d))}`; })()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Category summary table */}
         <div className="card">
-          <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>Category Summary (All Time)</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>
+              Category Summary ({summaryRange === 'fy' ? `${fyOf(selectedMonth)}` : 'All Time'})
+            </h3>
+            <div style={{ display: 'flex', gap: '0.375rem' }}>
+              <button className={summaryRange === 'fy' ? 'btn-primary' : 'btn-ghost'} onClick={() => setSummaryRange('fy')} style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>
+                {fyOf(selectedMonth)}
+              </button>
+              <button className={summaryRange === 'all' ? 'btn-primary' : 'btn-ghost'} onClick={() => setSummaryRange('all')} style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>
+                All Time
+              </button>
+            </div>
+          </div>
           <div className="table-wrapper">
             <table>
               <thead>
@@ -114,7 +192,7 @@ export function TrendsPage() {
                 </tr>
               </thead>
               <tbody>
-                {getCategorySummary(ownerTxns, categories).map(row => (
+                {getCategorySummary(summaryTxns, categories).map(row => (
                   <tr key={row.name}>
                     <td>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>

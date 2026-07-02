@@ -31,6 +31,7 @@ interface AppState {
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
   rerunCorrelation: () => Promise<void>;
+  recategorizeUncategorized: () => Promise<number>;
   saveBudget: (budget: MonthlyBudget) => Promise<void>;
   getBudget: (owner: Owner, month: string) => MonthlyBudget | undefined;
   saveInvestment: (inv: Investment) => Promise<void>;
@@ -155,6 +156,23 @@ export const useStore = create<AppState>((set, get) => ({
     const correlated = correlateTransactions(categorized);
     await db.transactions.bulkPut(correlated);
     set({ transactions: correlated });
+  },
+
+  // Re-runs keyword matching on transactions that never got a real category
+  // ('Other Expenses' fallback or empty). Manual corrections are never touched,
+  // so editing keywords in Settings safely propagates to existing data.
+  async recategorizeUncategorized() {
+    const { transactions, categories, categoryRules } = get();
+    const cleared = transactions.map(t =>
+      t.category === 'Other Expenses' || !t.category ? { ...t, category: '' } : t
+    );
+    const categorized = categorizeTransactions(cleared, categories, categoryRules);
+    const changed = categorized.filter((t, i) => t.category !== transactions[i].category);
+    if (changed.length > 0) {
+      await db.transactions.bulkPut(changed);
+      set({ transactions: categorized });
+    }
+    return changed.length;
   },
 
   async saveBudget(budget: MonthlyBudget) {

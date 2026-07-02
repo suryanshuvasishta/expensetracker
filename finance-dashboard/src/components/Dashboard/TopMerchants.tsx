@@ -6,13 +6,36 @@ interface Props {
 }
 
 function extractMerchant(narration: string): string {
-  // UPI patterns: UPI/MERCHANT/XXXX
+  // VPA anywhere in the narration: merchant.name@bank → "merchant name"
+  const vpaMatch = narration.match(/([a-z0-9._-]{3,})@[a-z]{2,}/i);
+  if (vpaMatch) {
+    const handle = vpaMatch[1].replace(/[._-]+/g, ' ').replace(/\d{4,}/g, '').trim();
+    if (handle.length >= 3) return titleCase(handle).slice(0, 30);
+  }
+  // UPI patterns: UPI/MERCHANT/XXXX or UPI-MERCHANT-...
   const upiMatch = narration.match(/UPI[-\/]([^\/\-]+)/i);
-  if (upiMatch) return upiMatch[1].trim().slice(0, 30);
+  if (upiMatch) {
+    const m = cleanupSegment(upiMatch[1]);
+    if (m) return m;
+  }
   // POS patterns
-  const posMatch = narration.match(/POS\s+(.+?)(?:\s{2,}|\d{4}|$)/i);
-  if (posMatch) return posMatch[1].trim().slice(0, 30);
-  return narration.trim().slice(0, 30);
+  const posMatch = narration.match(/POS\s+(.+?)(?:\s{2,}|\d{4,}|$)/i);
+  if (posMatch) {
+    const m = cleanupSegment(posMatch[1]);
+    if (m) return m;
+  }
+  return cleanupSegment(narration) || narration.trim().slice(0, 30);
+}
+
+// Strip ref/txn number runs and collapse whitespace so the same merchant
+// doesn't fragment into several rows.
+function cleanupSegment(s: string): string {
+  const cleaned = s.replace(/\b\d{6,}\b/g, '').replace(/\s+/g, ' ').trim();
+  return cleaned.slice(0, 30);
+}
+
+function titleCase(s: string): string {
+  return s.replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export function TopMerchants({ transactions }: Props) {
