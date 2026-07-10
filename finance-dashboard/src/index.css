@@ -123,3 +123,67 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 select option { background-color: var(--bg-card); }
+
+/* ── Mobile & tablet responsive overrides ── */
+/* Sidebar is position:sticky on desktop, position:fixed on mobile via class override */
+.sidebar-mobile {
+  transition: transform 0.25s ease;
+}
+
+@media (max-width: 768px) {
+  /* Sidebar drawer overlay */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 49;
+  }
+
+  /* Sidebar slides in from left */
+  .sidebar-mobile {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    z-index: 50;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+    transform: translateX(0);
+    width: 220px !important;
+  }
+  .sidebar-mobile.sidebar-mobile-hidden {
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+
+  /* Card padding tightened */
+  .card { padding: 1rem; }
+
+  /* Larger tap targets */
+  .btn-primary, .btn-ghost {
+    min-height: 44px;
+    padding: 0.625rem 1.25rem;
+  }
+
+  /* Minimum readable font size */
+  table { font-size: 0.8125rem; }
+
+  /* Header hamburger button — show on mobile */
+  .header-hamburger { display: flex !important; }
+
+  /* Upload FileRow stacks on mobile */
+  .file-row-controls {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .file-row-controls select {
+    width: calc(50% - 0.25rem) !important;
+    flex: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .header-hamburger { display: none !important; }
+  .sidebar-overlay { display: none !important; }
+}

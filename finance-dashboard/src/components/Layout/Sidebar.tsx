@@ -7,6 +7,7 @@ interface Props {
   onNavigate: (page: string) => void;
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
 }
 
 const NAV_ITEMS = [
@@ -26,27 +27,31 @@ const OWNER_LABELS: { value: Owner | 'All'; label: string; short: string }[] = [
   { value: 'All', label: 'Both', short: '⊕' },
 ];
 
-export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props) {
+export function Sidebar({ currentPage, onNavigate, collapsed, onToggle, mobileOpen = false }: Props) {
   const { selectedOwner, setSelectedOwner, theme, setTheme } = useStore();
+
+  // On mobile the sidebar is always expanded (220px) when open
+  const effectiveCollapsed = collapsed;
 
   return (
     <aside
+      className={`sidebar-mobile${mobileOpen ? '' : ' sidebar-mobile-hidden'}`}
       style={{
-        width: collapsed ? '64px' : '220px',
-        minHeight: '100vh',
+        width: effectiveCollapsed ? '64px' : '220px',
+        minHeight: '100dvh',
         background: 'var(--bg-card)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'width 0.2s ease',
+        transition: 'width 0.2s ease, transform 0.25s ease',
         flexShrink: 0,
         position: 'sticky',
         top: 0,
-        height: '100vh',
+        height: '100dvh',
       }}
     >
       <div style={{ padding: '1.25rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
-        {!collapsed && (
+        {!effectiveCollapsed && (
           <div>
             <div style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>Finance</div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Dashboard</div>
@@ -54,22 +59,22 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
         )}
         <button
           onClick={onToggle}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '4px', borderRadius: '6px', display: 'flex' }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '10px', borderRadius: '6px', display: 'flex', minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
         >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          {effectiveCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
       </div>
 
       {/* Persona switcher */}
       <div style={{ padding: '0.625rem 0.5rem', borderBottom: '1px solid var(--border)' }}>
-        {collapsed ? (
+        {effectiveCollapsed ? (
           <button
             onClick={() => {
               const idx = OWNER_LABELS.findIndex(o => o.value === selectedOwner);
               setSelectedOwner(OWNER_LABELS[(idx + 1) % OWNER_LABELS.length].value as Owner | 'All');
             }}
             title={OWNER_LABELS.find(o => o.value === selectedOwner)?.label}
-            style={{ width: '100%', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '8px', color: '#60a5fa', cursor: 'pointer', padding: '0.375rem', fontSize: '0.875rem', fontWeight: 700 }}
+            style={{ width: '100%', background: 'rgba(59,130,246,0.15)', border: 'none', borderRadius: '8px', color: '#60a5fa', cursor: 'pointer', padding: '0.625rem', fontSize: '0.875rem', fontWeight: 700, minHeight: 44 }}
           >
             {OWNER_LABELS.find(o => o.value === selectedOwner)?.short}
           </button>
@@ -80,8 +85,8 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
                 key={o.value}
                 onClick={() => setSelectedOwner(o.value as Owner | 'All')}
                 style={{
-                  flex: 1, padding: '0.25rem', fontSize: '0.7rem', fontWeight: selectedOwner === o.value ? 700 : 400,
-                  borderRadius: '6px', border: 'none', cursor: 'pointer',
+                  flex: 1, padding: '0.5rem 0.25rem', fontSize: '0.75rem', fontWeight: selectedOwner === o.value ? 700 : 400,
+                  borderRadius: '6px', border: 'none', cursor: 'pointer', minHeight: 40,
                   background: selectedOwner === o.value ? 'rgba(59,130,246,0.2)' : 'transparent',
                   color: selectedOwner === o.value ? '#60a5fa' : 'var(--text-dim)',
                   transition: 'all 0.15s',
@@ -102,13 +107,13 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              title={collapsed ? item.label : undefined}
+              title={effectiveCollapsed ? item.label : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.75rem',
                 width: '100%',
-                padding: '0.625rem 0.75rem',
+                padding: '0.75rem',
                 borderRadius: '8px',
                 border: 'none',
                 background: active ? 'rgba(59,130,246,0.15)' : 'transparent',
@@ -120,30 +125,25 @@ export function Sidebar({ currentPage, onNavigate, collapsed, onToggle }: Props)
                 transition: 'all 0.15s',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-              }}
-              onMouseEnter={e => {
-                if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)';
-              }}
-              onMouseLeave={e => {
-                if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                minHeight: 44,
               }}
             >
               <Icon size={18} style={{ flexShrink: 0 }} />
-              {!collapsed && item.label}
+              {!effectiveCollapsed && item.label}
             </button>
           );
         })}
       </nav>
 
-      <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.7rem', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'space-between', gap: '0.5rem' }}>
-        {collapsed ? '🔒' : <span>🔒 All data stored locally</span>}
+      <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', fontSize: '0.75rem', color: 'var(--text-faint)', display: 'flex', alignItems: 'center', justifyContent: effectiveCollapsed ? 'center' : 'space-between', gap: '0.5rem' }}>
+        {effectiveCollapsed ? '🔒' : <span>🔒 All data stored locally</span>}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '2px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '10px', display: 'flex', alignItems: 'center', flexShrink: 0, minWidth: 40, minHeight: 40, justifyContent: 'center' }}
         >
-          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
       </div>
     </aside>

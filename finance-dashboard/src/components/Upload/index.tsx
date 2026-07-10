@@ -250,37 +250,41 @@ function FileRow({ fs, onAccountChange, onOwnerChange, onPasswordChange, onProce
 
   return (
     <div style={{ padding: '0.75rem', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        {statusIcon}
-        <span style={{ flex: 1, fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fs.file.name}</span>
-        <select
-          value={fs.owner}
-          onChange={e => onOwnerChange(e.target.value as Owner)}
-          style={{ width: '110px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-          disabled={fs.status === 'processing' || fs.status === 'done'}
-        >
-          {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select
-          value={fs.account}
-          onChange={e => onAccountChange(e.target.value as AccountType)}
-          style={{ width: '170px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-          disabled={fs.status === 'processing' || fs.status === 'done'}
-        >
-          <option value="Unknown">Auto-detect</option>
-          {ACCOUNT_OPTIONS.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-        {fs.status === 'done' && (
-          <span style={{ fontSize: '0.75rem', color: '#4ade80', whiteSpace: 'nowrap' }}>{fs.count} txns</span>
-        )}
-        {(fs.status === 'pending' || fs.status === 'error') && (
-          <button className="btn-primary" onClick={onProcess} style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>
-            Process
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
+          {statusIcon}
+          <span style={{ flex: 1, fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{fs.file.name}</span>
+        </div>
+        <div className="file-row-controls" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <select
+            value={fs.owner}
+            onChange={e => onOwnerChange(e.target.value as Owner)}
+            style={{ width: '110px', padding: '0.375rem 0.5rem', fontSize: '0.75rem' }}
+            disabled={fs.status === 'processing' || fs.status === 'done'}
+          >
+            {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select
+            value={fs.account}
+            onChange={e => onAccountChange(e.target.value as AccountType)}
+            style={{ width: '170px', padding: '0.375rem 0.5rem', fontSize: '0.75rem' }}
+            disabled={fs.status === 'processing' || fs.status === 'done'}
+          >
+            <option value="Unknown">Auto-detect</option>
+            {ACCOUNT_OPTIONS.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          {fs.status === 'done' && (
+            <span style={{ fontSize: '0.75rem', color: '#4ade80', whiteSpace: 'nowrap' }}>{fs.count} txns</span>
+          )}
+          {(fs.status === 'pending' || fs.status === 'error') && (
+            <button className="btn-primary" onClick={onProcess} style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem', minHeight: 36 }}>
+              Process
+            </button>
+          )}
+          <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '10px', minWidth: 40, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Trash2 size={14} />
           </button>
-        )}
-        <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}>
-          <Trash2 size={14} />
-        </button>
+        </div>
       </div>
       {fs.status === 'error' && (
         <div style={{ marginTop: '0.5rem' }}>
