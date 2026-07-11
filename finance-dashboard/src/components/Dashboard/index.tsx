@@ -73,13 +73,13 @@ export function Dashboard() {
         <CashFlowChart transactions={transactions} endMonth={selectedMonth} owner={selectedOwner} />
 
         {/* Row 3 — where money goes */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
           <CategoryChart transactions={monthTxns} categories={categories} />
           <TopMerchants transactions={monthTxns} />
         </div>
 
         {/* Row 4 — how it's paid + net worth */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
           <PaymentMethodChart transactions={monthTxns} />
           <NetWorthCard investments={investments} liabilities={liabilities} selectedOwner={selectedOwner} />
         </div>
