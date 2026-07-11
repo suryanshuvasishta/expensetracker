@@ -55,7 +55,7 @@ function NumInput({ value, onChange, style }: { value: number; onChange: (v: num
       value={raw}
       onChange={e => { setRaw(e.target.value); onChange(parseFloat(e.target.value) || 0); }}
       placeholder="0"
-      style={{ width: '120px', textAlign: 'right', padding: '0.25rem 0.5rem', fontSize: '0.8125rem', ...style }}
+      style={{ width: '90px', textAlign: 'right', padding: '0.25rem 0.5rem', fontSize: '0.8125rem', ...style }}
     />
   );
 }
@@ -183,7 +183,7 @@ export function BudgetPage() {
         {/* Investments */}
         <Section title="Planned Investments">
           {budget.investments.map((inv, idx) => (
-            <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0' }}>
+            <div key={inv.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', padding: '0.375rem 0' }}>
               <input
                 value={inv.label}
                 onChange={e => {
@@ -191,7 +191,7 @@ export function BudgetPage() {
                   updated[idx] = { ...inv, label: e.target.value };
                   patch('investments', updated);
                 }}
-                style={{ flex: 1, padding: '0.25rem 0.5rem', fontSize: '0.8125rem' }}
+                style={{ flex: '1 1 140px', padding: '0.25rem 0.5rem', fontSize: '0.8125rem', minWidth: '120px' }}
                 placeholder="Investment name"
               />
               <select
@@ -201,7 +201,7 @@ export function BudgetPage() {
                   updated[idx] = { ...inv, goal: e.target.value as InvestmentLine['goal'] };
                   patch('investments', updated);
                 }}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', width: '180px' }}
+                style={{ flex: '1 1 130px', padding: '0.25rem 0.5rem', fontSize: '0.75rem', minWidth: '120px' }}
               >
                 {INVESTMENT_GOALS.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
@@ -212,7 +212,7 @@ export function BudgetPage() {
               }} />
               <button
                 onClick={() => patch('investments', budget.investments.filter((_, i) => i !== idx))}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '4px' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: '6px' }}
               >
                 <Trash2 size={14} />
               </button>
@@ -284,52 +284,55 @@ export function BudgetPage() {
                 {!isOneTime && tab > 0 && groupBudgeted > 0 && (
                   <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{pct(groupBudgeted, tab)} of TAB</span>
                 )}
-                <span style={{ fontSize: '0.8125rem', color: '#64748b', minWidth: '80px', textAlign: 'right' }}>
+                <span style={{ fontSize: '0.8125rem', color: '#64748b', minWidth: '60px', textAlign: 'right' }}>
                   {fmt(groupBudgeted)}
                 </span>
-                <span style={{ fontSize: '0.8125rem', color: groupActual > groupBudgeted && groupBudgeted > 0 ? '#f87171' : '#4ade80', minWidth: '80px', textAlign: 'right' }}>
+                <span style={{ fontSize: '0.8125rem', color: groupActual > groupBudgeted && groupBudgeted > 0 ? '#f87171' : '#4ade80', minWidth: '60px', textAlign: 'right' }}>
                   {fmt(groupActual)}
                 </span>
               </div>
 
               {!isCollapsed && (
-                <div style={{ padding: '0.5rem 1rem 0.75rem' }}>
-                  <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.7rem', color: '#475569', marginBottom: '0.5rem', paddingLeft: '1rem' }}>
-                    <span style={{ flex: 1 }}>Category</span>
-                    <span style={{ width: '130px', textAlign: 'right' }}>Budget</span>
-                    <span style={{ width: '100px', textAlign: 'right' }}>Actual</span>
-                    <span style={{ width: '80px', textAlign: 'right' }}>Δ</span>
-                  </div>
-                  {categories.map(cat => {
-                    const budgeted = budget.categoryBudgets[cat] || 0;
-                    const actual = actualByCategory[cat] || 0;
-                    const delta = budgeted - actual;
-                    return (
-                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', paddingLeft: '1rem' }}>
-                        <span style={{ flex: 1, fontSize: '0.8125rem', color: '#94a3b8' }}>{cat}</span>
-                        <NumInput
-                          value={budgeted}
-                          onChange={v => {
-                            const updated = { ...budget.categoryBudgets, [cat]: v };
-                            patch('categoryBudgets', updated);
-                          }}
-                        />
-                        <span style={{ width: '100px', textAlign: 'right', fontSize: '0.8125rem', color: actual > 0 ? '#cbd5e1' : '#475569' }}>
-                          {fmt(actual)}
-                        </span>
-                        <span style={{ width: '80px', textAlign: 'right', fontSize: '0.8125rem', color: delta < 0 ? '#f87171' : delta > 0 ? '#4ade80' : '#475569' }}>
-                          {budgeted > 0 || actual > 0 ? (delta >= 0 ? '+' : '') + fmt(delta) : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.5rem', marginTop: '0.25rem', borderTop: '1px solid #1e293b', paddingLeft: '1rem' }}>
-                    <span style={{ flex: 1, fontSize: '0.8125rem', fontWeight: 600, color: '#64748b' }}>Group Total</span>
-                    <span style={{ width: '130px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: '#94a3b8' }}>{fmt(groupBudgeted)}</span>
-                    <span style={{ width: '100px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: groupActual > groupBudgeted && groupBudgeted > 0 ? '#f87171' : '#94a3b8' }}>{fmt(groupActual)}</span>
-                    <span style={{ width: '80px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: groupBudgeted - groupActual < 0 ? '#f87171' : '#4ade80' }}>
-                      {groupBudgeted > 0 || groupActual > 0 ? (groupBudgeted - groupActual >= 0 ? '+' : '') + fmt(groupBudgeted - groupActual) : ''}
-                    </span>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: '380px', padding: '0.5rem 1rem 0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.7rem', color: '#475569', marginBottom: '0.5rem', paddingLeft: '1rem' }}>
+                      <span style={{ flex: 1 }}>Category</span>
+                      <span style={{ width: '100px', textAlign: 'right' }}>Budget</span>
+                      <span style={{ width: '80px', textAlign: 'right' }}>Actual</span>
+                      <span style={{ width: '60px', textAlign: 'right' }}>Δ</span>
+                    </div>
+                    {categories.map(cat => {
+                      const budgeted = budget.categoryBudgets[cat] || 0;
+                      const actual = actualByCategory[cat] || 0;
+                      const delta = budgeted - actual;
+                      return (
+                        <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', paddingLeft: '1rem' }}>
+                          <span style={{ flex: 1, fontSize: '0.8125rem', color: '#94a3b8', minWidth: 0 }}>{cat}</span>
+                          <NumInput
+                            value={budgeted}
+                            onChange={v => {
+                              const updated = { ...budget.categoryBudgets, [cat]: v };
+                              patch('categoryBudgets', updated);
+                            }}
+                            style={{ width: '90px' }}
+                          />
+                          <span style={{ width: '80px', textAlign: 'right', fontSize: '0.8125rem', color: actual > 0 ? '#cbd5e1' : '#475569' }}>
+                            {fmt(actual)}
+                          </span>
+                          <span style={{ width: '60px', textAlign: 'right', fontSize: '0.8125rem', color: delta < 0 ? '#f87171' : delta > 0 ? '#4ade80' : '#475569' }}>
+                            {budgeted > 0 || actual > 0 ? (delta >= 0 ? '+' : '') + fmt(delta) : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: 'flex', gap: '0.5rem', paddingTop: '0.5rem', marginTop: '0.25rem', borderTop: '1px solid #1e293b', paddingLeft: '1rem' }}>
+                      <span style={{ flex: 1, fontSize: '0.8125rem', fontWeight: 600, color: '#64748b' }}>Group Total</span>
+                      <span style={{ width: '100px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: '#94a3b8' }}>{fmt(groupBudgeted)}</span>
+                      <span style={{ width: '80px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: groupActual > groupBudgeted && groupBudgeted > 0 ? '#f87171' : '#94a3b8' }}>{fmt(groupActual)}</span>
+                      <span style={{ width: '60px', textAlign: 'right', fontSize: '0.8125rem', fontWeight: 600, color: groupBudgeted - groupActual < 0 ? '#f87171' : '#4ade80' }}>
+                        {groupBudgeted > 0 || groupActual > 0 ? (groupBudgeted - groupActual >= 0 ? '+' : '') + fmt(groupBudgeted - groupActual) : ''}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

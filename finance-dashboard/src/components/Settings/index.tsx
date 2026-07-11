@@ -194,7 +194,7 @@ export function SettingsPage() {
             <a href="https://github.com/suryanshuvasishta/expensetracker/blob/main/finance-dashboard/DRIVE_SYNC_SETUP.md" target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa' }}>step-by-step guide</a>.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
               <div>
                 <label style={{ fontSize: '0.8125rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Google OAuth Client ID</label>
                 <input value={gClientId} onChange={e => setGClientId(e.target.value)} placeholder="xxxxx.apps.googleusercontent.com" />
@@ -351,9 +351,9 @@ export function SettingsPage() {
 
         {/* Category Editor */}
         <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Categories ({editCats.length})</h3>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button className="btn-ghost" onClick={resetToDefaults} style={{ fontSize: '0.75rem' }}>Reset defaults</button>
               <button className="btn-ghost" onClick={addCategory} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <Plus size={13} /> Add
@@ -366,41 +366,43 @@ export function SettingsPage() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '500px', overflowY: 'auto' }}>
             {editCats.map(cat => (
-              <div key={cat.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
+              <div key={cat.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
+                {/* Row 1: color + name + delete */}
                 <input
                   type="color"
                   value={cat.color}
                   onChange={e => updateCat(cat.id, { color: e.target.value })}
-                  style={{ width: '32px', height: '32px', padding: '2px', border: 'none', background: 'none', cursor: 'pointer' }}
+                  style={{ width: '32px', height: '32px', padding: '2px', border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }}
                 />
                 <input
                   value={cat.name}
                   onChange={e => updateCat(cat.id, { name: e.target.value })}
                   placeholder="Category name"
-                  style={{ width: '160px' }}
-                />
-                <input
-                  value={cat.keywords.join(', ')}
-                  onChange={e => updateCat(cat.id, { keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
-                  placeholder="keywords, comma, separated"
-                  style={{ flex: 1 }}
+                  style={{ flex: '1 1 120px', minWidth: '100px' }}
                 />
                 <select
                   value={cat.group || 'Miscellaneous'}
                   onChange={e => updateCat(cat.id, { group: e.target.value })}
-                  style={{ width: '170px', fontSize: '0.75rem' }}
+                  style={{ flex: '1 1 130px', minWidth: '120px', fontSize: '0.75rem' }}
                 >
                   {ALL_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
+                <button onClick={() => removeCat(cat.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', flexShrink: 0 }}>
+                  <Trash2 size={14} />
+                </button>
+                {/* Row 2: keywords + icon (full width, always wraps below) */}
+                <input
+                  value={cat.keywords.join(', ')}
+                  onChange={e => updateCat(cat.id, { keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
+                  placeholder="keywords, comma, separated"
+                  style={{ flex: '1 1 200px', fontSize: '0.8125rem' }}
+                />
                 <input
                   value={cat.icon || ''}
                   onChange={e => updateCat(cat.id, { icon: e.target.value })}
                   placeholder="🏷️"
-                  style={{ width: '48px', textAlign: 'center' }}
+                  style={{ width: '48px', textAlign: 'center', flexShrink: 0 }}
                 />
-                <button onClick={() => removeCat(cat.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
-                  <Trash2 size={14} />
-                </button>
               </div>
             ))}
           </div>
