@@ -143,21 +143,21 @@ export function ImportPanel() {
       <div
         {...getRootProps()}
         style={{
-          border: `2px dashed ${isDragActive ? '#3b82f6' : '#334155'}`,
+          border: `2px dashed ${isDragActive ? '#3b82f6' : 'var(--border)'}`,
           borderRadius: '12px',
           padding: '2.5rem 1.5rem',
           textAlign: 'center',
           cursor: 'pointer',
-          background: isDragActive ? 'rgba(59,130,246,0.08)' : '#1e293b',
+          background: isDragActive ? 'rgba(59,130,246,0.08)' : 'var(--bg-elevated)',
           transition: 'all 0.2s',
         }}
       >
         <input {...getInputProps()} />
-        <Upload size={32} color={isDragActive ? '#3b82f6' : '#475569'} style={{ margin: '0 auto 0.75rem' }} />
-        <p style={{ color: '#94a3b8', margin: '0 0 0.5rem', fontSize: '0.9375rem' }}>
+        <Upload size={32} color={isDragActive ? '#3b82f6' : 'var(--text-faint)'} style={{ margin: '0 auto 0.75rem' }} />
+        <p style={{ color: 'var(--text-muted)', margin: '0 0 0.5rem', fontSize: '0.9375rem' }}>
           {isDragActive ? 'Drop files here...' : 'Drag & drop bank / credit card statements here'}
         </p>
-        <p style={{ color: '#475569', fontSize: '0.8125rem', margin: 0 }}>
+        <p style={{ color: 'var(--text-faint)', fontSize: '0.8125rem', margin: 0 }}>
           Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC, Paytm
         </p>
       </div>
@@ -214,7 +214,7 @@ export function ImportPanel() {
           <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>Uploaded Files</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {uploadedFiles.map(f => (
-              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem', background: '#0f172a', borderRadius: '8px' }}>
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem', background: 'var(--bg-elevated)', borderRadius: '8px' }}>
                 <FileText size={16} color="#64748b" style={{ flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
@@ -268,7 +268,7 @@ function FileRow({ fs, onAccountChange, onOwnerChange, onPasswordChange, onProce
   }[fs.status];
 
   return (
-    <div style={{ padding: '0.75rem', background: '#0f172a', borderRadius: '8px', border: '1px solid #1e293b' }}>
+    <div style={{ padding: '0.75rem', background: 'var(--bg-elevated)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
           {statusIcon}
