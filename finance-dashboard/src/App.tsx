@@ -38,7 +38,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case 'home': return <HomePage onNavigate={setPage} />;
+      case 'home': return <HomePage />;
       case 'dashboard': return <Dashboard />;
       case 'cashflow': return <CashFlowPage />;
       case 'transactions': return <TransactionsPage />;
@@ -46,7 +46,7 @@ export default function App() {
       case 'budget': return <BudgetPage />;
       case 'portfolio': return <PortfolioPage />;
       case 'settings': return <SettingsPage />;
-      default: return <HomePage onNavigate={setPage} />;
+      default: return <HomePage />;
     }
   };
 

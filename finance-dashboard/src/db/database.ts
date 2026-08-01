@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie';
-import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget, Investment, Liability, CategoryRule, Tombstone, Goal } from '../types';
-import { DEFAULT_GOALS } from '../types';
+import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget, Investment, Liability, CategoryRule, Tombstone, Goal, CategoryGroup } from '../types';
+import { DEFAULT_GOALS, DEFAULT_CATEGORY_GROUPS } from '../types';
 
 export class FinanceDB extends Dexie {
   transactions!: Table<Transaction>;
@@ -13,6 +13,7 @@ export class FinanceDB extends Dexie {
   categoryRules!: Table<CategoryRule>;
   tombstones!: Table<Tombstone>;
   goals!: Table<Goal>;
+  categoryGroups!: Table<CategoryGroup>;
 
   constructor() {
     super('FinanceDashboard');
@@ -79,6 +80,19 @@ export class FinanceDB extends Dexie {
       tombstones: 'id, deletedAt',
       goals: 'id, name',
     });
+    this.version(8).stores({
+      transactions: 'id, date, month, account, category, paymentMethod, type, sourceFile, owner',
+      categories: 'id, name',
+      uploadedFiles: 'id, account, month, status, owner',
+      settings: 'id',
+      budgets: 'id, month, owner',
+      investments: 'id, owner, assetClass, goal',
+      liabilities: 'id, owner, type',
+      categoryRules: 'id, keyword, category',
+      tombstones: 'id, deletedAt',
+      goals: 'id, name',
+      categoryGroups: 'id, name, order',
+    });
   }
 }
 
@@ -98,25 +112,32 @@ export async function getOrCreateSettings(): Promise<AppSettings & { id: number 
 export async function getCategories(): Promise<Category[]> {
   const count = await db.categories.count();
   if (count === 0) {
-    await db.categories.bulkPut(DEFAULT_CATEGORIES);
+    const seeded = DEFAULT_CATEGORIES.map((c, i) => ({ ...c, order: i }));
+    await db.categories.bulkPut(seeded);
     return db.categories.toArray();
   }
 
   // Backfill: existing installs may have categories without a `group` (pre-migration),
-  // or be missing newer default categories (e.g. Dividends) entirely.
+  // without an explicit `order` (pre sub-category reordering), or be missing newer
+  // default categories (e.g. Dividends) entirely.
   const existing = await db.categories.toArray();
   const byId = new Map(existing.map(c => [c.id, c]));
   const toUpdate: Category[] = [];
 
+  const orderCounters = new Map<string, number>();
   for (const c of existing) {
-    if (!c.group) {
-      const fallback = DEFAULT_CATEGORIES.find(d => d.id === c.id || d.name === c.name);
-      toUpdate.push({ ...c, group: fallback?.group || 'Miscellaneous' });
+    const group = c.group || DEFAULT_CATEGORIES.find(d => d.id === c.id || d.name === c.name)?.group || 'Miscellaneous';
+    const nextOrder = orderCounters.get(group) ?? 0;
+    orderCounters.set(group, nextOrder + 1);
+    if (!c.group || c.order === undefined) {
+      toUpdate.push({ ...c, group, order: c.order ?? nextOrder });
     }
   }
   for (const def of DEFAULT_CATEGORIES) {
     if (!byId.has(def.id) && !existing.some(c => c.name === def.name)) {
-      toUpdate.push(def);
+      const nextOrder = orderCounters.get(def.group!) ?? 0;
+      orderCounters.set(def.group!, nextOrder + 1);
+      toUpdate.push({ ...def, order: nextOrder });
     }
   }
 
@@ -125,6 +146,26 @@ export async function getCategories(): Promise<Category[]> {
     return db.categories.toArray();
   }
 
+  return existing;
+}
+
+export async function getCategoryGroups(): Promise<CategoryGroup[]> {
+  const count = await db.categoryGroups.count();
+  if (count === 0) {
+    await db.categoryGroups.bulkPut(DEFAULT_CATEGORY_GROUPS);
+    return db.categoryGroups.toArray();
+  }
+  // Backfill: any group referenced by a category but missing from the table
+  // (e.g. a legacy free-text group, or one created before this table existed).
+  const [existing, categories] = await Promise.all([db.categoryGroups.toArray(), db.categories.toArray()]);
+  const existingNames = new Set(existing.map(g => g.name));
+  const missing = [...new Set(categories.map(c => c.group).filter((g): g is string => !!g && !existingNames.has(g)))];
+  if (missing.length > 0) {
+    let nextOrder = existing.length > 0 ? Math.max(...existing.map(g => g.order)) + 1 : 0;
+    const toAdd = missing.map(name => ({ id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, order: nextOrder++ }));
+    await db.categoryGroups.bulkPut(toAdd);
+    return db.categoryGroups.toArray();
+  }
   return existing;
 }
 

@@ -61,8 +61,8 @@ function NumInput({ value, onChange, style }: { value: number; onChange: (v: num
 }
 
 export function BudgetPage() {
-  const { transactions, categories, saveBudget, getBudget, selectedMonth, selectedOwner } = useStore();
-  const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
+  const { transactions, categories, categoryGroups: storeCategoryGroups, saveBudget, getBudget, selectedMonth, selectedOwner } = useStore();
+  const categoryGroups = useMemo(() => buildCategoryGroups(categories, storeCategoryGroups), [categories, storeCategoryGroups]);
   const nonBudgetCategoryNames = useMemo(
     () => new Set(categories.filter(c => isNonBudgetGroup(c.group)).map(c => c.name)),
     [categories]

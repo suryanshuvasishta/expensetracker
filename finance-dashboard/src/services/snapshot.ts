@@ -1,4 +1,4 @@
-import type { Transaction, MonthlyBudget, Investment, Liability, Category, Tombstone, Goal } from '../types';
+import type { Transaction, MonthlyBudget, Investment, Liability, Category, Tombstone, Goal, CategoryGroup } from '../types';
 import { db } from '../db/database';
 
 export interface SnapshotMeta {
@@ -16,6 +16,7 @@ export interface Snapshot extends SnapshotMeta {
   categories: Category[];
   tombstones?: Tombstone[];
   goals?: Goal[];
+  categoryGroups?: CategoryGroup[];
 }
 
 export function getCurrentFY(): string {
@@ -80,7 +81,7 @@ export async function exportSnapshot(
 
 /** Build a full-DB snapshot object (used by Drive sync as well as manual export). */
 export async function buildFullSnapshot(): Promise<Snapshot> {
-  const [transactions, budgets, investments, liabilities, categories, tombstones, goals] = await Promise.all([
+  const [transactions, budgets, investments, liabilities, categories, tombstones, goals, categoryGroups] = await Promise.all([
     db.transactions.toArray(),
     db.budgets.toArray(),
     db.investments.toArray(),
@@ -88,6 +89,7 @@ export async function buildFullSnapshot(): Promise<Snapshot> {
     db.categories.toArray(),
     db.tombstones.toArray(),
     db.goals.toArray(),
+    db.categoryGroups.toArray(),
   ]);
   return {
     version: '2.0',
@@ -101,6 +103,7 @@ export async function buildFullSnapshot(): Promise<Snapshot> {
     categories,
     tombstones,
     goals,
+    categoryGroups,
   };
 }
 
@@ -120,6 +123,7 @@ export async function applySnapshot(snapshot: Snapshot): Promise<{ imported: num
   if (snapshot.liabilities?.length) await db.liabilities.bulkPut(snapshot.liabilities);
   if (snapshot.categories?.length) await db.categories.bulkPut(snapshot.categories);
   if (snapshot.goals?.length) await db.goals.bulkPut(snapshot.goals);
+  if (snapshot.categoryGroups?.length) await db.categoryGroups.bulkPut(snapshot.categoryGroups);
 
   return {
     imported: txnsToApply.length,

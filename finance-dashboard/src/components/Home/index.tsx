@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Settings as SettingsIcon, Sun, Moon, PiggyBank, Quote, Wallet, List, PieChart, BarChart3, Upload, ClipboardCheck } from 'lucide-react';
+import { PiggyBank, Quote, Wallet, List, PieChart, BarChart3, Upload, ClipboardCheck } from 'lucide-react';
 import { useStore } from '../../store';
 import type { Owner } from '../../types';
 
-interface Props {
-  onNavigate: (page: string) => void;
-}
 
 const OWNER_LABELS: { value: Owner | 'All'; short: string; label: string }[] = [
   { value: 'Suryanshu', short: 'S', label: 'Suryanshu' },
@@ -37,8 +34,8 @@ const STEPS: { icon: typeof Wallet; title: string; body: string }[] = [
   { icon: BarChart3, title: '6. Review the big picture', body: 'Dashboard, Trends, and Cash Flow give you month-over-month spend, category breakdowns, and account-level cash movement.' },
 ];
 
-export function HomePage({ onNavigate }: Props) {
-  const { selectedOwner, setSelectedOwner, theme, setTheme } = useStore();
+export function HomePage() {
+  const { selectedOwner, setSelectedOwner } = useStore();
   const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * QUOTES.length));
 
   useEffect(() => {
@@ -50,39 +47,17 @@ export function HomePage({ onNavigate }: Props) {
 
   const quote = QUOTES[quoteIdx];
 
-  const iconBtn: React.CSSProperties = {
-    width: 40, height: 40, borderRadius: '10px', border: 'none', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'var(--bg-elevated)', color: 'var(--text-primary)',
-  };
-
   return (
     <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2.5rem 1.5rem' }}>
       <div style={{ width: '100%', maxWidth: '640px', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ width: 44, height: 44, borderRadius: '12px', background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <PiggyBank size={22} color="#60a5fa" />
-            </div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>Finance Dashboard</h1>
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-dim)' }}>🔒 All data stored locally</div>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: '12px', background: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PiggyBank size={22} color="#60a5fa" />
           </div>
-
-          {/* Settings + theme toggle, upper right */}
-          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-            <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              style={iconBtn}
-            >
-              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button onClick={() => onNavigate('settings')} title="Settings" style={iconBtn}>
-              <SettingsIcon size={18} />
-            </button>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>Finance Dashboard</h1>
+            <div style={{ fontSize: '0.8125rem', color: 'var(--text-dim)' }}>🔒 All data stored locally — Settings and theme are in the top-right of the tab bar above.</div>
           </div>
         </div>
 

@@ -19,7 +19,7 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, deleteTransactionsForMonth, addTransactions, saveCategoryRule, applyRuleToAll, addCategory, rerunCorrelation } = useStore();
+  const { transactions, categories, categoryGroups: storeCategoryGroups, addCategoryGroup, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, deleteTransactionsForMonth, addTransactions, saveCategoryRule, applyRuleToAll, addCategory, rerunCorrelation } = useStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -55,7 +55,7 @@ export function TransactionsPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
   const accounts = [...new Set(transactions.map(t => t.account))];
-  const categoryGroups = useMemo(() => buildCategoryGroups(categories), [categories]);
+  const categoryGroups = useMemo(() => buildCategoryGroups(categories, storeCategoryGroups), [categories, storeCategoryGroups]);
   const ADD_NEW = '__add_new__';
 
   // Kakeibo month-end check: manual entries verified against statements vs still pending
@@ -87,20 +87,29 @@ export function TransactionsPage() {
 
   async function handleCategorySelect(value: string) {
     if (value === ADD_NEW) {
-      const name = window.prompt('New category name:');
+      const name = window.prompt('New sub-category name (e.g. "Pet Care"):');
       if (!name || !name.trim()) return;
       const trimmed = name.trim();
       if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
         setEditCategory(trimmed);
         return;
       }
-      const group = window.prompt('Group for this category (e.g. Miscellaneous, Income):', 'Miscellaneous') || 'Miscellaneous';
+      const existingGroupNames = storeCategoryGroups.map(g => g.name).join(', ');
+      const group = (window.prompt(`Which Category does this belong under? (existing: ${existingGroupNames})`, 'Miscellaneous') || 'Miscellaneous').trim();
+      // Reuse the shared Category-group system (Settings > Categories) rather than
+      // creating a free-text group name that wouldn't show up there.
+      if (!storeCategoryGroups.some(g => g.name.toLowerCase() === group.toLowerCase())) {
+        await addCategoryGroup(group);
+      }
+      const siblings = categories.filter(c => (c.group || 'Miscellaneous').toLowerCase() === group.toLowerCase());
+      const order = siblings.length > 0 ? Math.max(...siblings.map(c => c.order ?? 0)) + 1 : 0;
       const newCat: Category = {
         id: generateId(),
         name: trimmed,
         keywords: [],
         color: '#94a3b8',
-        group: group.trim() || 'Miscellaneous',
+        group,
+        order,
       };
       await addCategory(newCat);
       setEditCategory(trimmed);
