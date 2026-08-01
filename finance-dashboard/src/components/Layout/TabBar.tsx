@@ -29,6 +29,28 @@ export function TabBar({ currentPage, onNavigate }: Props) {
         flexShrink: 0,
       }}
     >
+      {/* Logo — takes you to Home (owner switch, theme, settings, quotes) */}
+      <button
+        onClick={() => onNavigate('home')}
+        title="Home"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 40,
+          height: 40,
+          marginRight: '0.5rem',
+          flexShrink: 0,
+          border: 'none',
+          borderRadius: '10px',
+          cursor: 'pointer',
+          background: currentPage === 'home' ? 'rgba(59,130,246,0.15)' : 'transparent',
+          color: '#60a5fa',
+        }}
+      >
+        <Wallet size={18} />
+      </button>
+
       {TABS.map(tab => {
         const Icon = tab.icon;
         const active = currentPage === tab.id;

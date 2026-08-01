@@ -13,17 +13,19 @@
   --text-faint: #475569;
 }
 
+/* Sepia — warm, low-glare tones instead of stark white, easier on the eyes
+   in low light (paper-like rather than a bright backlit panel). */
 [data-theme="light"] {
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-elevated: #f1f5f9;
-  --border: #e2e8f0;
-  --border-subtle: #f1f5f9;
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #475569;
-  --text-dim: #64748b;
-  --text-faint: #94a3b8;
+  --bg-main: #f2e8d5;
+  --bg-card: #f7efdd;
+  --bg-elevated: #ece0c8;
+  --border: #d9c8a6;
+  --border-subtle: #e6d8b8;
+  --text-primary: #3a2e1f;
+  --text-secondary: #5c4a33;
+  --text-muted: #7a6449;
+  --text-dim: #8f7a5c;
+  --text-faint: #a8916f;
 }
 
 * {

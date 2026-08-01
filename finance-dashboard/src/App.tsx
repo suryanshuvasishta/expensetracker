@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { SideRail } from './components/Layout/SideRail';
 import { TabBar } from './components/Layout/TabBar';
+import { HomePage } from './components/Home';
 import { Dashboard } from './components/Dashboard';
 import { TransactionsPage } from './components/Transactions';
 import { TrendsPage } from './components/Trends';
@@ -11,7 +11,7 @@ import { PortfolioPage } from './components/Portfolio';
 import { useStore } from './store';
 
 export default function App() {
-  const [page, setPage] = useState('budget');
+  const [page, setPage] = useState('home');
   const loadAll = useStore(s => s.loadAll);
   const isLoading = useStore(s => s.isLoading);
   const theme = useStore(s => s.theme);
@@ -38,6 +38,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
+      case 'home': return <HomePage onNavigate={setPage} />;
       case 'dashboard': return <Dashboard />;
       case 'cashflow': return <CashFlowPage />;
       case 'transactions': return <TransactionsPage />;
@@ -45,22 +46,18 @@ export default function App() {
       case 'budget': return <BudgetPage />;
       case 'portfolio': return <PortfolioPage />;
       case 'settings': return <SettingsPage />;
-      default: return <BudgetPage />;
+      default: return <HomePage onNavigate={setPage} />;
     }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      <SideRail currentPage={page} onNavigate={setPage} />
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <TabBar currentPage={page} onNavigate={setPage} />
-        <main style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {renderPage()}
-        </main>
-      </div>
+      <TabBar currentPage={page} onNavigate={setPage} />
+      <main style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {renderPage()}
+      </main>
     </div>
   );
 }
