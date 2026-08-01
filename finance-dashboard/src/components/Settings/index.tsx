@@ -46,12 +46,12 @@ export function SettingsPage() {
     }
   }
 
-  async function handleDriveSync() {
+  async function handleDriveSync(force = false) {
     setDriveSyncing(true);
     setDriveMsg('');
     try {
       if (deviceOwner) driveSync.setDeviceOwner(deviceOwner as Owner);
-      const result = await driveSync.syncNow();
+      const result = await driveSync.syncNow(force);
       setLastSync(driveSync.getLastSync());
       setDriveMsg(
         result.pulledFrom.length > 0
@@ -59,7 +59,20 @@ export function SettingsPage() {
           : 'Synced! Pushed this device\'s data and monthly backups (no other device files found yet).'
       );
     } catch (e: any) {
-      setDriveMsg(`Sync error: ${e.message}`);
+      if (e instanceof driveSync.SyncGuardError) {
+        const proceed = window.confirm(
+          `${e.message}\n\nOnly continue if you intentionally deleted transactions (e.g. bulk-removed duplicates). ` +
+          `If your local data was accidentally cleared or failed to load, click Cancel and fix that first — ` +
+          `continuing will permanently overwrite the Drive backup with the smaller local dataset.`
+        );
+        if (proceed) {
+          await handleDriveSync(true);
+          return;
+        }
+        setDriveMsg('Sync cancelled — local data was not pushed to Drive.');
+      } else {
+        setDriveMsg(`Sync error: ${e.message}`);
+      }
     } finally {
       setDriveSyncing(false);
     }
@@ -215,7 +228,7 @@ export function SettingsPage() {
                 </button>
               ) : (
                 <>
-                  <button className="btn-primary" onClick={handleDriveSync} disabled={driveSyncing} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button className="btn-primary" onClick={() => handleDriveSync()} disabled={driveSyncing} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <RefreshCw size={14} className={driveSyncing ? 'spinning' : ''} />
                     {driveSyncing ? 'Syncing…' : 'Sync now'}
                   </button>

@@ -1,4 +1,4 @@
-import type { Transaction, MonthlyBudget, Investment, Liability, Category } from '../types';
+import type { Transaction, MonthlyBudget, Investment, Liability, Category, Tombstone } from '../types';
 import { db } from '../db/database';
 
 export interface SnapshotMeta {
@@ -14,6 +14,7 @@ export interface Snapshot extends SnapshotMeta {
   investments: Investment[];
   liabilities: Liability[];
   categories: Category[];
+  tombstones?: Tombstone[];
 }
 
 export function getCurrentFY(): string {
@@ -78,12 +79,13 @@ export async function exportSnapshot(
 
 /** Build a full-DB snapshot object (used by Drive sync as well as manual export). */
 export async function buildFullSnapshot(): Promise<Snapshot> {
-  const [transactions, budgets, investments, liabilities, categories] = await Promise.all([
+  const [transactions, budgets, investments, liabilities, categories, tombstones] = await Promise.all([
     db.transactions.toArray(),
     db.budgets.toArray(),
     db.investments.toArray(),
     db.liabilities.toArray(),
     db.categories.toArray(),
+    db.tombstones.toArray(),
   ]);
   return {
     version: '2.0',
@@ -95,23 +97,28 @@ export async function buildFullSnapshot(): Promise<Snapshot> {
     investments,
     liabilities,
     categories,
+    tombstones,
   };
 }
 
-/** Merge a snapshot into the DB (upsert by id — same-id records are overwritten). */
+/** Merge a snapshot into the DB (upsert by id — same-id records are overwritten). Honors tombstones: never resurrects a record that was explicitly deleted locally. */
 export async function applySnapshot(snapshot: Snapshot): Promise<{ imported: number; type: string }> {
   if (!snapshot.version || !snapshot.transactions) {
     throw new Error('Invalid snapshot file format');
   }
 
-  await db.transactions.bulkPut(snapshot.transactions);
+  const localTombstoneIds = new Set((await db.tombstones.toArray()).map(t => t.id));
+  const txnsToApply = snapshot.transactions.filter(t => !localTombstoneIds.has(t.id));
+
+  await db.transactions.bulkPut(txnsToApply);
+  if (snapshot.tombstones?.length) await db.tombstones.bulkPut(snapshot.tombstones);
   if (snapshot.budgets?.length) await db.budgets.bulkPut(snapshot.budgets);
   if (snapshot.investments?.length) await db.investments.bulkPut(snapshot.investments);
   if (snapshot.liabilities?.length) await db.liabilities.bulkPut(snapshot.liabilities);
   if (snapshot.categories?.length) await db.categories.bulkPut(snapshot.categories);
 
   return {
-    imported: snapshot.transactions.length,
+    imported: txnsToApply.length,
     type: snapshot.filterLabel || 'Unknown',
   };
 }
