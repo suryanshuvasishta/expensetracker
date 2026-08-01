@@ -23,6 +23,7 @@ interface AppState {
   updateTransaction: (id: string, patch: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   deleteBySourceFile: (sourceFile: string) => Promise<void>;
+  deleteTransactionsForMonth: (month: string) => Promise<number>;
   setSelectedMonth: (month: string) => void;
   setSelectedOwner: (owner: Owner | 'All') => void;
   setTheme: (t: 'dark' | 'light') => void;
@@ -116,6 +117,23 @@ export const useStore = create<AppState>((set, get) => ({
       transactions: state.transactions.filter(t => t.sourceFile !== sourceFile),
       uploadedFiles: state.uploadedFiles.filter(f => f.name !== sourceFile),
     }));
+  },
+
+  async deleteTransactionsForMonth(month) {
+    const ids = (await db.transactions.where('month').equals(month).toArray()).map(t => t.id);
+    if (ids.length === 0) return 0;
+    await db.transactions.bulkDelete(ids);
+    const deletedAt = new Date().toISOString();
+    await db.tombstones.bulkPut(ids.map(id => ({ id, deletedAt })));
+    // Tombstoning (not just deleting) is what makes this stick across Drive sync —
+    // a plain delete would get silently pulled back in from the device's own last
+    // backup on the next sync, which is what "Clear all data" used to do wrong.
+    await db.uploadedFiles.where('month').equals(month).delete();
+    set(state => ({
+      transactions: state.transactions.filter(t => t.month !== month),
+      uploadedFiles: state.uploadedFiles.filter(f => f.month !== month),
+    }));
+    return ids.length;
   },
 
   setSelectedMonth(month) {

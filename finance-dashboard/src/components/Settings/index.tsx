@@ -473,11 +473,22 @@ export function SettingsPage() {
             Clearing removes transactions, uploads, budgets, portfolio, and learned rules
             (category definitions are kept). Export a snapshot first if you might want it back.
           </p>
+          <p style={{ color: '#fbbf24', fontSize: '0.75rem', margin: '0 0 0.75rem' }}>
+            If Google Drive sync is connected, budgets/investments/liabilities can still come
+            back from your Drive backup on the next sync (only transaction deletes are tracked
+            and propagated). Disconnect sync first, or expect to re-clear after a sync, if you
+            need those gone for good too.
+          </p>
           <button
             className="btn-ghost"
             onClick={async () => {
               if (confirm('Delete ALL data — transactions, uploads, budgets, investments, liabilities, and learned rules? This cannot be undone.')) {
                 const { db } = await import('../../db/database');
+                // Tombstone every transaction before clearing — otherwise the next Drive
+                // sync silently pulls them all back in from this device's own last backup.
+                const allIds = (await db.transactions.toArray()).map(t => t.id);
+                const deletedAt = new Date().toISOString();
+                await db.tombstones.bulkPut(allIds.map(id => ({ id, deletedAt })));
                 await db.transactions.clear();
                 await db.uploadedFiles.clear();
                 await db.budgets.clear();

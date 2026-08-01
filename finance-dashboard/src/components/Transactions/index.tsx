@@ -19,7 +19,7 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, addTransactions, saveCategoryRule, applyRuleToAll, addCategory, rerunCorrelation } = useStore();
+  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, deleteTransactionsForMonth, addTransactions, saveCategoryRule, applyRuleToAll, addCategory, rerunCorrelation } = useStore();
   const [showAddForm, setShowAddForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -130,6 +130,16 @@ export function TransactionsPage() {
     setTimeout(() => { setLearnPrompt(null); setLearnApplied(null); }, save ? 3000 : 0);
   }
 
+  async function handleDeleteMonth() {
+    if (monthTxns.length === 0) return;
+    const confirmed = confirm(
+      `Delete all ${monthTxns.length} transactions for ${selectedMonth}? This also removes their uploaded-file records. ` +
+      `This can't be undone locally, and the deletion will propagate on the next Drive sync too.`
+    );
+    if (!confirmed) return;
+    await deleteTransactionsForMonth(selectedMonth);
+  }
+
   function exportCSV() {
     const header = 'Date,Account,Narration,Amount,Type,Category,Payment Method\n';
     const rows = filtered.map(t =>
@@ -169,6 +179,16 @@ export function TransactionsPage() {
           <button className="btn-ghost" onClick={exportCSV} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Download size={14} /> Export CSV
           </button>
+          {monthTxns.length > 0 && (
+            <button
+              className="btn-ghost"
+              onClick={handleDeleteMonth}
+              title={`Delete all transactions for ${selectedMonth}`}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f87171', borderColor: 'rgba(239,68,68,0.3)' }}
+            >
+              <Trash2 size={14} /> Delete {selectedMonth}
+            </button>
+          )}
           <span style={{ color: '#64748b', fontSize: '0.8125rem' }}>{filtered.length} transactions</span>
         </div>
 
@@ -316,15 +336,16 @@ export function TransactionsPage() {
                     <button onClick={() => startEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: '4px', borderRadius: '4px' }}>
                       <Edit2 size={13} />
                     </button>
-                    {t.sourceFile === MANUAL_SOURCE && (
-                      <button
-                        onClick={() => { if (confirm('Delete this manual entry?')) deleteTransaction(t.id); }}
-                        title="Delete manual entry"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7f1d1d', padding: '4px', borderRadius: '4px' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        const label = t.sourceFile === MANUAL_SOURCE ? 'this manual entry' : `this ${t.account} transaction`;
+                        if (confirm(`Delete ${label}? "${t.narration}" — ${fmt(t.amount)}`)) deleteTransaction(t.id);
+                      }}
+                      title="Delete transaction"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7f1d1d', padding: '4px', borderRadius: '4px' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </td>
                 </tr>
               ))}
