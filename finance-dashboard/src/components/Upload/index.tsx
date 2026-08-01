@@ -25,9 +25,10 @@ interface FileState {
 }
 
 export function UploadPage() {
-  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner, transactions } = useStore();
+  const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner, selectedMonth, setSelectedMonth, transactions } = useStore();
   const [fileStates, setFileStates] = useState<FileState[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [importedMonths, setImportedMonths] = useState<string[]>([]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles: FileState[] = acceptedFiles.map(file => ({
@@ -110,6 +111,9 @@ export function UploadPage() {
       };
       await addUploadedFile(uploadRecord);
 
+      const monthsInFile = [...new Set(finalized.map(t => t.month))];
+      setImportedMonths(prev => [...new Set([...prev, ...monthsInFile])]);
+
       updateFileState(fs.id, { status: 'done', count: finalized.length, account: account as AccountType });
     } catch (err: any) {
       const msg = err?.message || String(err);
@@ -157,6 +161,22 @@ export function UploadPage() {
             Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC, Paytm
           </p>
         </div>
+
+        {/* Imported-month mismatch warning */}
+        {importedMonths.some(m => m !== selectedMonth) && (
+          <div className="card" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <AlertCircle size={16} color="#fbbf24" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '0.8125rem', color: '#fbbf24', flex: 1 }}>
+              Imported transactions for {importedMonths.filter(m => m !== selectedMonth).join(', ')} —
+              your Transactions page is currently showing {selectedMonth} and won't display them until you switch months.
+            </span>
+            {importedMonths.filter(m => m !== selectedMonth).map(m => (
+              <button key={m} className="btn-primary" style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }} onClick={() => setSelectedMonth(m)}>
+                Switch to {m}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* File list */}
         {fileStates.length > 0 && (
