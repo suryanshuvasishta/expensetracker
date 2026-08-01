@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
-import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget, Investment, Liability, CategoryRule, Tombstone } from '../types';
+import type { Transaction, Category, UploadedFile, AppSettings, MonthlyBudget, Investment, Liability, CategoryRule, Tombstone, Goal } from '../types';
+import { DEFAULT_GOALS } from '../types';
 
 export class FinanceDB extends Dexie {
   transactions!: Table<Transaction>;
@@ -11,6 +12,7 @@ export class FinanceDB extends Dexie {
   liabilities!: Table<Liability>;
   categoryRules!: Table<CategoryRule>;
   tombstones!: Table<Tombstone>;
+  goals!: Table<Goal>;
 
   constructor() {
     super('FinanceDashboard');
@@ -65,6 +67,18 @@ export class FinanceDB extends Dexie {
       categoryRules: 'id, keyword, category',
       tombstones: 'id, deletedAt',
     });
+    this.version(7).stores({
+      transactions: 'id, date, month, account, category, paymentMethod, type, sourceFile, owner',
+      categories: 'id, name',
+      uploadedFiles: 'id, account, month, status, owner',
+      settings: 'id',
+      budgets: 'id, month, owner',
+      investments: 'id, owner, assetClass, goal',
+      liabilities: 'id, owner, type',
+      categoryRules: 'id, keyword, category',
+      tombstones: 'id, deletedAt',
+      goals: 'id, name',
+    });
   }
 }
 
@@ -112,6 +126,15 @@ export async function getCategories(): Promise<Category[]> {
   }
 
   return existing;
+}
+
+export async function getGoals(): Promise<Goal[]> {
+  const count = await db.goals.count();
+  if (count === 0) {
+    await db.goals.bulkPut(DEFAULT_GOALS);
+    return db.goals.toArray();
+  }
+  return db.goals.toArray();
 }
 
 export const DEFAULT_CATEGORIES: Category[] = [

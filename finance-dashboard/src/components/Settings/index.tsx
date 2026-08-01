@@ -14,8 +14,18 @@ import { generateId } from '../../parsers/base';
 const ALL_GROUPS = [...GROUP_ORDER, 'Income', 'System'];
 
 export function SettingsPage() {
-  const { categories, setCategories, rerunCorrelation, recategorizeUncategorized, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, selectedMonth, loadAll } = useStore();
+  const { categories, setCategories, rerunCorrelation, recategorizeUncategorized, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, goals, addGoal, deleteGoal, selectedMonth, loadAll } = useStore();
   const [editCats, setEditCats] = useState<Category[]>([...categories]);
+  const [newGoalName, setNewGoalName] = useState('');
+
+  async function handleAddGoal() {
+    const trimmed = newGoalName.trim();
+    if (!trimmed) return;
+    if (!goals.some(g => g.name.toLowerCase() === trimmed.toLowerCase())) {
+      await addGoal({ id: generateId(), name: trimmed });
+    }
+    setNewGoalName('');
+  }
   const [sheetId, setSheetId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [syncing, setSyncing] = useState(false);
@@ -463,6 +473,41 @@ export function SettingsPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Financial goals */}
+        <div className="card">
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9375rem', fontWeight: 600 }}>Financial Goals</h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.8125rem', margin: '0 0 0.75rem' }}>
+            Used to tag investments on the Portfolio tab (e.g. Retirement, Child's Education, Emergency Fund).
+            You can also add a new goal directly from a holding's editor.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginBottom: '0.75rem' }}>
+            {goals.map(g => (
+              <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem' }}>
+                <span style={{ flex: 1, color: 'var(--text-primary)' }}>{g.name}</span>
+                <button
+                  onClick={() => deleteGoal(g.id)}
+                  title="Delete goal"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              value={newGoalName}
+              onChange={e => setNewGoalName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddGoal()}
+              placeholder="e.g. Sabbatical Fund"
+              style={{ flex: 1 }}
+            />
+            <button className="btn-primary" onClick={handleAddGoal} disabled={!newGoalName.trim()} style={{ padding: '0.375rem 0.875rem', fontSize: '0.8125rem' }}>
+              Add
+            </button>
+          </div>
         </div>
 
         {/* Data management */}

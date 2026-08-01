@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { db, getCategories } from '../db/database';
+import { db, getCategories, getGoals } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner, CategoryRule } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner, CategoryRule, Goal } from '../types';
 
 interface AppState {
   transactions: Transaction[];
@@ -12,6 +12,7 @@ interface AppState {
   investments: Investment[];
   liabilities: Liability[];
   categoryRules: CategoryRule[];
+  goals: Goal[];
   selectedMonth: string; // YYYY-MM
   selectedOwner: Owner | 'All'; // persona filter
   theme: 'dark' | 'light';
@@ -37,7 +38,10 @@ interface AppState {
   getBudget: (owner: Owner, month: string) => MonthlyBudget | undefined;
   saveInvestment: (inv: Investment) => Promise<void>;
   deleteInvestment: (id: string) => Promise<void>;
+  deleteInvestments: (ids: string[]) => Promise<void>;
   bulkSaveInvestments: (invs: Investment[]) => Promise<void>;
+  addGoal: (goal: Goal) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
   saveLiability: (l: Liability) => Promise<void>;
   deleteLiability: (id: string) => Promise<void>;
   saveCategoryRule: (rule: CategoryRule) => Promise<void>;
@@ -53,6 +57,7 @@ export const useStore = create<AppState>((set, get) => ({
   investments: [],
   liabilities: [],
   categoryRules: [],
+  goals: [],
   selectedMonth: new Date().toISOString().slice(0, 7),
   selectedOwner: 'Suryanshu',
   theme: (localStorage.getItem('theme') as 'dark' | 'light') || 'dark',
@@ -62,7 +67,7 @@ export const useStore = create<AppState>((set, get) => ({
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules] = await Promise.all([
+      const [transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, goals] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
         db.uploadedFiles.toArray(),
@@ -70,8 +75,9 @@ export const useStore = create<AppState>((set, get) => ({
         db.investments.toArray(),
         db.liabilities.toArray(),
         db.categoryRules.toArray(),
+        getGoals(),
       ]);
-      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, isLoading: false });
+      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, goals, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
@@ -220,12 +226,29 @@ export const useStore = create<AppState>((set, get) => ({
     set(state => ({ investments: state.investments.filter(i => i.id !== id) }));
   },
 
+  async deleteInvestments(ids: string[]) {
+    if (ids.length === 0) return;
+    await db.investments.bulkDelete(ids);
+    const idSet = new Set(ids);
+    set(state => ({ investments: state.investments.filter(i => !idSet.has(i.id)) }));
+  },
+
   async bulkSaveInvestments(invs: Investment[]) {
     await db.investments.bulkPut(invs);
     const ids = new Set(invs.map(i => i.id));
     set(state => ({
       investments: [...state.investments.filter(i => !ids.has(i.id)), ...invs],
     }));
+  },
+
+  async addGoal(goal: Goal) {
+    await db.goals.put(goal);
+    set(state => ({ goals: [...state.goals.filter(g => g.id !== goal.id), goal] }));
+  },
+
+  async deleteGoal(id: string) {
+    await db.goals.delete(id);
+    set(state => ({ goals: state.goals.filter(g => g.id !== id) }));
   },
 
   async saveLiability(l: Liability) {
