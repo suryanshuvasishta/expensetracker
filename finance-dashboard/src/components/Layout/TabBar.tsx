@@ -1,4 +1,4 @@
-import { Wallet, List, PieChart, BarChart3, TrendingUp, ArrowLeftRight, type LucideIcon } from 'lucide-react';
+import { Wallet, List, PieChart, BarChart3, TrendingUp, ArrowLeftRight, PiggyBank, type LucideIcon } from 'lucide-react';
 
 interface Props {
   currentPage: string;
@@ -48,7 +48,7 @@ export function TabBar({ currentPage, onNavigate }: Props) {
           color: '#60a5fa',
         }}
       >
-        <Wallet size={18} />
+        <PiggyBank size={18} />
       </button>
 
       {TABS.map(tab => {
