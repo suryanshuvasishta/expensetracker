@@ -263,6 +263,7 @@ async function mergeRemoteSnapshot(snapshot: Snapshot): Promise<number> {
   await addMissing(db.liabilities, snapshot.liabilities);
   await addMissing(db.categories, snapshot.categories);
   await addMissing(db.goals, snapshot.goals);
+  await addMissing(db.categoryGroups, snapshot.categoryGroups);
 
   return toApply.length + staleLocalIds.length;
 }

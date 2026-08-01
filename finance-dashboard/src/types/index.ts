@@ -97,6 +97,8 @@ export interface Category {
   color: string;
   icon?: string;
   group?: string;
+  /** Sort position of this sub-category within its group. Lower first. */
+  order?: number;
 }
 
 export interface UploadedFile {
@@ -161,8 +163,9 @@ export interface MonthlyBudget {
   categoryBudgets: Record<string, number>;
 }
 
-// Default group display order. Any group not listed here (e.g. a user-created group)
-// is appended at the end, alphabetically, before the non-budget groups.
+// Default group display order, used only to seed CategoryGroup records on first
+// run and as a fallback sort key for any group that predates that table. The
+// source of truth for ordering is CategoryGroup.order (user-editable in Settings).
 export const GROUP_ORDER: string[] = [
   'Housing',
   'Food',
@@ -182,18 +185,48 @@ export function isNonBudgetGroup(group: string | undefined): boolean {
   return !!group && NON_BUDGET_GROUPS.includes(group);
 }
 
+/** A top-level spending Category (e.g. "Housing", "Food") — the parent of Category
+ *  sub-categories (e.g. "Rent", "Electricity"). Explicitly orderable/editable, unlike
+ *  the old hardcoded GROUP_ORDER list. */
+export interface CategoryGroup {
+  id: string;
+  name: string;
+  order: number;
+}
+
+export const DEFAULT_CATEGORY_GROUPS: CategoryGroup[] = [...GROUP_ORDER, ...NON_BUDGET_GROUPS].map((name, i) => ({
+  id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+  name,
+  order: i,
+}));
+
 const FALLBACK_GROUP = 'Miscellaneous';
 
-/** Builds category groups dynamically from the live (DB-backed, user-editable) category list. */
-export function buildCategoryGroups(categories: Category[]): { group: string; categories: string[] }[] {
-  const byGroup = new Map<string, string[]>();
+/** Builds ordered category groups (for dropdowns, Budget rows, etc.) from the live,
+ *  user-editable CategoryGroup (top-level "Category") and Category ("Sub-category")
+ *  records. Groups sort by CategoryGroup.order; sub-categories within a group sort by
+ *  Category.order. Falls back gracefully for any group/category missing an explicit
+ *  order (older data, or a group that isn't in the CategoryGroup table yet). */
+export function buildCategoryGroups(
+  categories: Category[],
+  categoryGroups: CategoryGroup[] = []
+): { group: string; categories: string[] }[] {
+  const byGroup = new Map<string, Category[]>();
   for (const c of categories) {
     const g = c.group || FALLBACK_GROUP;
     if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g)!.push(c.name);
+    byGroup.get(g)!.push(c);
   }
+
+  const groupOrderByName = new Map(categoryGroups.map(g => [g.name, g.order]));
   const groups = [...byGroup.keys()];
   groups.sort((a, b) => {
+    const ao = groupOrderByName.get(a);
+    const bo = groupOrderByName.get(b);
+    if (ao !== undefined && bo !== undefined) return ao - bo;
+    if (ao !== undefined) return -1;
+    if (bo !== undefined) return 1;
+    // Neither has an explicit order (legacy data) — fall back to the old static order.
     const ai = GROUP_ORDER.indexOf(a);
     const bi = GROUP_ORDER.indexOf(b);
     if (ai !== -1 && bi !== -1) return ai - bi;
@@ -202,7 +235,16 @@ export function buildCategoryGroups(categories: Category[]): { group: string; ca
     if (isNonBudgetGroup(a) !== isNonBudgetGroup(b)) return isNonBudgetGroup(a) ? 1 : -1;
     return a.localeCompare(b);
   });
-  return groups.map(group => ({ group, categories: byGroup.get(group)! }));
+
+  return groups.map(group => {
+    const items = [...byGroup.get(group)!].sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return { group, categories: items.map(c => c.name) };
+  });
 }
 
 export type ParsedTransaction = Omit<Transaction, 'id' | 'owner' | 'createdAt' | 'month' | 'correlatedIds' | 'isCorrelationPair'> & { owner?: Owner };

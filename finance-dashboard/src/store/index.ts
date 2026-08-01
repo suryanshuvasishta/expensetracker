@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { db, getCategories, getGoals } from '../db/database';
+import { db, getCategories, getGoals, getCategoryGroups } from '../db/database';
 import { correlateTransactions } from '../services/correlator';
 import { categorizeTransactions } from '../services/categorizer';
-import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner, CategoryRule, Goal } from '../types';
+import type { Transaction, Category, UploadedFile, MonthlyBudget, Investment, Liability, Owner, CategoryRule, Goal, CategoryGroup } from '../types';
 
 interface AppState {
   transactions: Transaction[];
   categories: Category[];
+  categoryGroups: CategoryGroup[];
   uploadedFiles: UploadedFile[];
   budgets: MonthlyBudget[];
   investments: Investment[];
@@ -30,6 +31,11 @@ interface AppState {
   setTheme: (t: 'dark' | 'light') => void;
   setCategories: (cats: Category[]) => Promise<void>;
   addCategory: (cat: Category) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  saveCategoryGroups: (groups: CategoryGroup[]) => Promise<void>;
+  addCategoryGroup: (name: string) => Promise<void>;
+  renameCategoryGroup: (id: string, newName: string) => Promise<void>;
+  deleteCategoryGroup: (id: string) => Promise<void>;
   addUploadedFile: (file: UploadedFile) => Promise<void>;
   updateUploadedFile: (id: string, patch: Partial<UploadedFile>) => Promise<void>;
   rerunCorrelation: () => Promise<void>;
@@ -52,6 +58,7 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   transactions: [],
   categories: [],
+  categoryGroups: [],
   uploadedFiles: [],
   budgets: [],
   investments: [],
@@ -67,9 +74,10 @@ export const useStore = create<AppState>((set, get) => ({
   async loadAll() {
     set({ isLoading: true });
     try {
-      const [transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, goals] = await Promise.all([
+      const [transactions, categories, categoryGroups, uploadedFiles, budgets, investments, liabilities, categoryRules, goals] = await Promise.all([
         db.transactions.orderBy('date').reverse().toArray(),
         getCategories(),
+        getCategoryGroups(),
         db.uploadedFiles.toArray(),
         db.budgets.toArray(),
         db.investments.toArray(),
@@ -77,7 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
         db.categoryRules.toArray(),
         getGoals(),
       ]);
-      set({ transactions, categories, uploadedFiles, budgets, investments, liabilities, categoryRules, goals, isLoading: false });
+      set({ transactions, categories, categoryGroups, uploadedFiles, budgets, investments, liabilities, categoryRules, goals, isLoading: false });
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
     }
@@ -164,6 +172,60 @@ export const useStore = create<AppState>((set, get) => ({
   async addCategory(cat: Category) {
     await db.categories.put(cat);
     set(state => ({ categories: [...state.categories.filter(c => c.id !== cat.id), cat] }));
+  },
+
+  async deleteCategory(id: string) {
+    await db.categories.delete(id);
+    set(state => ({ categories: state.categories.filter(c => c.id !== id) }));
+  },
+
+  async saveCategoryGroups(groups: CategoryGroup[]) {
+    await db.categoryGroups.bulkPut(groups);
+    set({ categoryGroups: groups });
+  },
+
+  async addCategoryGroup(name: string) {
+    const { categoryGroups } = get();
+    const trimmed = name.trim();
+    if (!trimmed || categoryGroups.some(g => g.name.toLowerCase() === trimmed.toLowerCase())) return;
+    const order = categoryGroups.length > 0 ? Math.max(...categoryGroups.map(g => g.order)) + 1 : 0;
+    const group: CategoryGroup = { id: `${Date.now()}-${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: trimmed, order };
+    await db.categoryGroups.put(group);
+    set(state => ({ categoryGroups: [...state.categoryGroups, group] }));
+  },
+
+  // Renaming a Category (group) must cascade to every sub-category referencing it by
+  // name, since Category.group is a plain string reference, not a foreign key.
+  async renameCategoryGroup(id: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const { categoryGroups, categories } = get();
+    const group = categoryGroups.find(g => g.id === id);
+    if (!group || group.name === trimmed) return;
+    const oldName = group.name;
+    const updatedGroups = categoryGroups.map(g => g.id === id ? { ...g, name: trimmed } : g);
+    const affected = categories.filter(c => c.group === oldName).map(c => ({ ...c, group: trimmed }));
+    await db.categoryGroups.put({ ...group, name: trimmed });
+    if (affected.length > 0) await db.categories.bulkPut(affected);
+    set(state => ({
+      categoryGroups: updatedGroups,
+      categories: state.categories.map(c => c.group === oldName ? { ...c, group: trimmed } : c),
+    }));
+  },
+
+  // Deleting a group reassigns its sub-categories to Miscellaneous rather than
+  // orphaning or deleting them.
+  async deleteCategoryGroup(id: string) {
+    const { categoryGroups, categories } = get();
+    const group = categoryGroups.find(g => g.id === id);
+    if (!group) return;
+    const reassigned = categories.filter(c => c.group === group.name).map(c => ({ ...c, group: 'Miscellaneous' }));
+    await db.categoryGroups.delete(id);
+    if (reassigned.length > 0) await db.categories.bulkPut(reassigned);
+    set(state => ({
+      categoryGroups: state.categoryGroups.filter(g => g.id !== id),
+      categories: state.categories.map(c => c.group === group.name ? { ...c, group: 'Miscellaneous' } : c),
+    }));
   },
 
   async addUploadedFile(file: UploadedFile) {

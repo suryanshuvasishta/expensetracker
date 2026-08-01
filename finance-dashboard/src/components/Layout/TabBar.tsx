@@ -1,4 +1,5 @@
-import { Wallet, List, PieChart, BarChart3, TrendingUp, ArrowLeftRight, PiggyBank, type LucideIcon } from 'lucide-react';
+import { Wallet, List, PieChart, BarChart3, TrendingUp, ArrowLeftRight, PiggyBank, Settings as SettingsIcon, Sun, Moon, type LucideIcon } from 'lucide-react';
+import { useStore } from '../../store';
 
 interface Props {
   currentPage: string;
@@ -15,6 +16,8 @@ const TABS: { id: string; label: string; icon: LucideIcon }[] = [
 ];
 
 export function TabBar({ currentPage, onNavigate }: Props) {
+  const { theme, setTheme } = useStore();
+
   return (
     <div
       className="tab-bar"
@@ -25,10 +28,10 @@ export function TabBar({ currentPage, onNavigate }: Props) {
         padding: '0.5rem 0.75rem 0',
         background: 'var(--bg-card)',
         borderBottom: '1px solid var(--border)',
-        overflowX: 'auto',
         flexShrink: 0,
       }}
     >
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
       {/* Logo — takes you to Home (owner switch, theme, settings, quotes) */}
       <button
         onClick={() => onNavigate('home')}
@@ -85,6 +88,33 @@ export function TabBar({ currentPage, onNavigate }: Props) {
           </button>
         );
       })}
+      </div>
+
+      {/* Settings + theme toggle, pinned to the top-right of the tab bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', paddingBottom: '0.5rem', marginLeft: '0.5rem', flexShrink: 0 }}>
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36,
+            border: 'none', borderRadius: '10px', cursor: 'pointer', background: 'transparent', color: 'var(--text-dim)',
+          }}
+        >
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+        <button
+          onClick={() => onNavigate('settings')}
+          title="Settings"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36,
+            border: 'none', borderRadius: '10px', cursor: 'pointer',
+            background: currentPage === 'settings' ? 'rgba(59,130,246,0.15)' : 'transparent',
+            color: currentPage === 'settings' ? '#60a5fa' : 'var(--text-dim)',
+          }}
+        >
+          <SettingsIcon size={16} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { RefreshCw, Plus, Trash2, Save, AlertCircle, Download, Upload } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { RefreshCw, Plus, Trash2, AlertCircle, Download, Upload, ChevronUp, ChevronDown, Check, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { DEFAULT_CATEGORIES } from '../../db/database';
@@ -8,15 +8,99 @@ import { exportSnapshot, importSnapshot, getCurrentFY } from '../../services/sna
 import { exportTransactionsCSV, importTransactionsCSV } from '../../services/csvBackup';
 import * as driveSync from '../../services/driveSync';
 import type { Category, Owner } from '../../types';
-import { GROUP_ORDER } from '../../types';
 import { generateId } from '../../parsers/base';
 
-const ALL_GROUPS = [...GROUP_ORDER, 'Income', 'System'];
-
 export function SettingsPage() {
-  const { categories, setCategories, rerunCorrelation, recategorizeUncategorized, transactions, budgets, investments, liabilities, categoryRules, deleteCategoryRule, goals, addGoal, deleteGoal, selectedMonth, loadAll } = useStore();
-  const [editCats, setEditCats] = useState<Category[]>([...categories]);
+  const {
+    categories, categoryGroups, setCategories, addCategory, deleteCategory,
+    saveCategoryGroups, addCategoryGroup, renameCategoryGroup, deleteCategoryGroup,
+    rerunCorrelation, recategorizeUncategorized, transactions, budgets, investments, liabilities,
+    categoryRules, deleteCategoryRule, goals, addGoal, deleteGoal, selectedMonth, loadAll,
+  } = useStore();
   const [newGoalName, setNewGoalName] = useState('');
+  const [recatMsg, setRecatMsg] = useState('');
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
+
+  // Categories grouped and ordered exactly as they'll appear in the Transactions
+  // dropdown — this editor IS the single source of truth for that ordering.
+  const sortedGroups = useMemo(() => [...categoryGroups].sort((a, b) => a.order - b.order), [categoryGroups]);
+  const catsByGroup = useMemo(() => {
+    const map = new Map<string, Category[]>();
+    for (const c of categories) {
+      const g = c.group || 'Miscellaneous';
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(c);
+    }
+    for (const list of map.values()) list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return map;
+  }, [categories]);
+
+  async function moveGroup(id: string, dir: -1 | 1) {
+    const idx = sortedGroups.findIndex(g => g.id === id);
+    const swapWith = idx + dir;
+    if (idx < 0 || swapWith < 0 || swapWith >= sortedGroups.length) return;
+    const a = sortedGroups[idx], b = sortedGroups[swapWith];
+    await saveCategoryGroups(categoryGroups.map(g =>
+      g.id === a.id ? { ...g, order: b.order } : g.id === b.id ? { ...g, order: a.order } : g
+    ));
+  }
+
+  async function moveSubcategory(cat: Category, dir: -1 | 1) {
+    const siblings = catsByGroup.get(cat.group || 'Miscellaneous') || [];
+    const idx = siblings.findIndex(c => c.id === cat.id);
+    const swapWith = idx + dir;
+    if (idx < 0 || swapWith < 0 || swapWith >= siblings.length) return;
+    const a = siblings[idx], b = siblings[swapWith];
+    const aOrder = a.order ?? idx, bOrder = b.order ?? swapWith;
+    await Promise.all([
+      addCategory({ ...a, order: bOrder }),
+      addCategory({ ...b, order: aOrder }),
+    ]);
+  }
+
+  async function handleAddGroup() {
+    const name = window.prompt('New Category name (e.g. "Travel"):');
+    if (name?.trim()) await addCategoryGroup(name.trim());
+  }
+
+  async function handleDeleteGroup(id: string, name: string) {
+    const count = (catsByGroup.get(name) || []).length;
+    const msg = count > 0
+      ? `Delete "${name}"? Its ${count} sub-categor${count === 1 ? 'y' : 'ies'} will move to Miscellaneous.`
+      : `Delete "${name}"?`;
+    if (confirm(msg)) await deleteCategoryGroup(id);
+  }
+
+  function startRenameGroup(id: string, name: string) {
+    setEditingGroupId(id);
+    setEditingGroupName(name);
+  }
+
+  async function commitRenameGroup() {
+    if (editingGroupId) await renameCategoryGroup(editingGroupId, editingGroupName);
+    setEditingGroupId(null);
+  }
+
+  function addSubcategory(groupName: string) {
+    const siblings = catsByGroup.get(groupName) || [];
+    const order = siblings.length > 0 ? Math.max(...siblings.map(c => c.order ?? 0)) + 1 : 0;
+    addCategory({ id: generateId(), name: 'New Category', keywords: [], color: '#94a3b8', icon: '', group: groupName, order });
+  }
+
+  function updateSubcategory(cat: Category, patch: Partial<Category>) {
+    addCategory({ ...cat, ...patch });
+  }
+
+  async function handleRecategorize() {
+    const recategorized = await recategorizeUncategorized();
+    await rerunCorrelation();
+    setRecatMsg(
+      recategorized > 0
+        ? `${recategorized} previously uncategorized transactions matched keywords and were updated!`
+        : 'Re-ran categorization — nothing new to update.'
+    );
+  }
 
   async function handleAddGoal() {
     const trimmed = newGoalName.trim();
@@ -103,7 +187,8 @@ export function SettingsPage() {
     setSyncMsg('');
     try {
       const cats = await fetchCategoriesFromSheet(sheetId, accessToken);
-      setEditCats(cats);
+      await setCategories(cats.map((c, i) => ({ ...c, order: i })));
+      await loadAll(); // refresh categoryGroups so any new group names from the sheet get a real, orderable entry
       setSyncMsg(`Synced ${cats.length} categories from Google Sheets!`);
     } catch (e: any) {
       setSyncMsg(`Error: ${e.message}`);
@@ -112,44 +197,18 @@ export function SettingsPage() {
     }
   }
 
-  function importFromCSV() {
+  async function importFromCSV() {
     const cats = parseCategoriesFromCSV(csvText);
-    setEditCats(cats);
+    await setCategories(cats.map((c, i) => ({ ...c, order: i })));
+    await loadAll();
     setSyncMsg(`Imported ${cats.length} categories from CSV`);
   }
 
-  async function saveCategories() {
-    await setCategories(editCats);
-    const recategorized = await recategorizeUncategorized();
-    await rerunCorrelation();
-    setSyncMsg(
-      recategorized > 0
-        ? `Categories saved — ${recategorized} previously uncategorized transactions matched the new keywords!`
-        : 'Categories saved and transactions re-categorized!'
-    );
-  }
-
-  function addCategory() {
-    setEditCats(prev => [...prev, {
-      id: generateId(),
-      name: 'New Category',
-      keywords: [],
-      color: '#94a3b8',
-      icon: '',
-      group: 'Miscellaneous',
-    }]);
-  }
-
-  function updateCat(id: string, patch: Partial<Category>) {
-    setEditCats(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
-  }
-
-  function removeCat(id: string) {
-    setEditCats(prev => prev.filter(c => c.id !== id));
-  }
-
-  function resetToDefaults() {
-    setEditCats([...DEFAULT_CATEGORIES]);
+  async function resetToDefaults() {
+    if (!confirm('Reset to the default category list? This replaces ALL categories and groups — custom ones you added will be lost.')) return;
+    await setCategories(DEFAULT_CATEGORIES.map((c, i) => ({ ...c, order: i })));
+    await loadAll();
+    setSyncMsg('Categories reset to defaults.');
   }
 
   async function handleExport(filterType: 'month' | 'fy' | 'all', filterValue: string) {
@@ -372,62 +431,122 @@ export function SettingsPage() {
           </div>
         )}
 
-        {/* Category Editor */}
+        {/* Category Editor — the single, unified place to edit Categories (groups) and
+            their Sub-categories, including the order they appear in everywhere else
+            (Transactions dropdown, Budget rows). Every edit here saves immediately —
+            there's no separate "unsaved draft" state to lose track of. */}
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Categories ({editCats.length})</h3>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Categories ({categories.length})</h3>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                Auto-classification matches narration text against each sub-category's keywords, in the order shown below.
+              </p>
+            </div>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
               <button className="btn-ghost" onClick={resetToDefaults} style={{ fontSize: '0.75rem' }}>Reset defaults</button>
-              <button className="btn-ghost" onClick={addCategory} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <Plus size={13} /> Add
+              <button className="btn-ghost" onClick={handleAddGroup} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <Plus size={13} /> Add Category
               </button>
-              <button className="btn-primary" onClick={saveCategories} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <Save size={13} /> Save & Recategorize
+              <button className="btn-primary" onClick={handleRecategorize} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <RefreshCw size={13} /> Recategorize Now
               </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '500px', overflowY: 'auto' }}>
-            {editCats.map(cat => (
-              <div key={cat.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
-                {/* Row 1: color + name + delete */}
-                <input
-                  type="color"
-                  value={cat.color}
-                  onChange={e => updateCat(cat.id, { color: e.target.value })}
-                  style={{ width: '32px', height: '32px', padding: '2px', border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }}
-                />
-                <input
-                  value={cat.name}
-                  onChange={e => updateCat(cat.id, { name: e.target.value })}
-                  placeholder="Category name"
-                  style={{ flex: '1 1 120px', minWidth: '100px' }}
-                />
-                <select
-                  value={cat.group || 'Miscellaneous'}
-                  onChange={e => updateCat(cat.id, { group: e.target.value })}
-                  style={{ flex: '1 1 130px', minWidth: '120px', fontSize: '0.75rem' }}
-                >
-                  {ALL_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <button onClick={() => removeCat(cat.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', flexShrink: 0 }}>
-                  <Trash2 size={14} />
-                </button>
-                {/* Row 2: keywords + icon (full width, always wraps below) */}
-                <input
-                  value={cat.keywords.join(', ')}
-                  onChange={e => updateCat(cat.id, { keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
-                  placeholder="keywords, comma, separated"
-                  style={{ flex: '1 1 200px', fontSize: '0.8125rem' }}
-                />
-                <input
-                  value={cat.icon || ''}
-                  onChange={e => updateCat(cat.id, { icon: e.target.value })}
-                  placeholder="🏷️"
-                  style={{ width: '48px', textAlign: 'center', flexShrink: 0 }}
-                />
-              </div>
-            ))}
+          {recatMsg && (
+            <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.8125rem', background: 'rgba(74,222,128,0.1)', color: '#4ade80' }}>
+              {recatMsg}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '600px', overflowY: 'auto' }}>
+            {sortedGroups.map((group, gi) => {
+              const subcats = catsByGroup.get(group.name) || [];
+              return (
+                <div key={group.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                  {/* Group header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', padding: '0.5rem 0.625rem', background: 'var(--bg-elevated)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <button onClick={() => moveGroup(group.id, -1)} disabled={gi === 0} style={{ background: 'none', border: 'none', cursor: gi === 0 ? 'default' : 'pointer', color: gi === 0 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronUp size={13} /></button>
+                      <button onClick={() => moveGroup(group.id, 1)} disabled={gi === sortedGroups.length - 1} style={{ background: 'none', border: 'none', cursor: gi === sortedGroups.length - 1 ? 'default' : 'pointer', color: gi === sortedGroups.length - 1 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronDown size={13} /></button>
+                    </div>
+                    {editingGroupId === group.id ? (
+                      <>
+                        <input
+                          value={editingGroupName}
+                          onChange={e => setEditingGroupName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && commitRenameGroup()}
+                          autoFocus
+                          style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem' }}
+                        />
+                        <button onClick={commitRenameGroup} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4ade80', padding: '4px' }}><Check size={14} /></button>
+                        <button onClick={() => setEditingGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: '4px' }}><X size={14} /></button>
+                      </>
+                    ) : (
+                      <span
+                        onClick={() => startRenameGroup(group.id, group.name)}
+                        title="Click to rename"
+                        style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)', cursor: 'pointer' }}
+                      >
+                        {group.name}
+                      </span>
+                    )}
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{subcats.length}</span>
+                    <button onClick={() => addSubcategory(group.name)} title="Add sub-category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', padding: '4px' }}>
+                      <Plus size={14} />
+                    </button>
+                    <button onClick={() => handleDeleteGroup(group.id, group.name)} title="Delete category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+
+                  {/* Sub-categories */}
+                  {subcats.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', padding: '0.5rem' }}>
+                      {subcats.map((cat, ci) => (
+                        <div key={cat.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <button onClick={() => moveSubcategory(cat, -1)} disabled={ci === 0} style={{ background: 'none', border: 'none', cursor: ci === 0 ? 'default' : 'pointer', color: ci === 0 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronUp size={12} /></button>
+                            <button onClick={() => moveSubcategory(cat, 1)} disabled={ci === subcats.length - 1} style={{ background: 'none', border: 'none', cursor: ci === subcats.length - 1 ? 'default' : 'pointer', color: ci === subcats.length - 1 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronDown size={12} /></button>
+                          </div>
+                          <input
+                            type="color"
+                            value={cat.color}
+                            onChange={e => updateSubcategory(cat, { color: e.target.value })}
+                            style={{ width: '28px', height: '28px', padding: '2px', border: 'none', background: 'none', cursor: 'pointer', flexShrink: 0 }}
+                          />
+                          <input
+                            defaultValue={cat.name}
+                            onBlur={e => e.target.value.trim() && e.target.value !== cat.name && updateSubcategory(cat, { name: e.target.value.trim() })}
+                            placeholder="Sub-category name"
+                            style={{ flex: '1 1 130px', minWidth: '100px' }}
+                          />
+                          <input
+                            defaultValue={cat.keywords.join(', ')}
+                            onBlur={e => updateSubcategory(cat, { keywords: e.target.value.split(',').map(k => k.trim()).filter(Boolean) })}
+                            placeholder="keywords, comma, separated"
+                            style={{ flex: '2 1 200px', fontSize: '0.8125rem' }}
+                          />
+                          <input
+                            defaultValue={cat.icon || ''}
+                            onBlur={e => updateSubcategory(cat, { icon: e.target.value })}
+                            placeholder="🏷️"
+                            style={{ width: '44px', textAlign: 'center', flexShrink: 0 }}
+                          />
+                          <button
+                            onClick={() => confirm(`Delete "${cat.name}"?`) && deleteCategory(cat.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', flexShrink: 0 }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
