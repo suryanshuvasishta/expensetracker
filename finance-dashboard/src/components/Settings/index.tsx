@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { RefreshCw, Plus, Trash2, AlertCircle, Download, Upload, ChevronUp, ChevronDown, Check, X } from 'lucide-react';
+import { RefreshCw, Plus, Trash2, AlertCircle, Download, Upload, ChevronUp, ChevronDown, ChevronRight, Check, X, GripVertical, Edit2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import { DEFAULT_CATEGORIES } from '../../db/database';
@@ -21,6 +21,9 @@ export function SettingsPage() {
   const [recatMsg, setRecatMsg] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [dragCatId, setDragCatId] = useState<string | null>(null);
+  const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
 
   // Categories grouped and ordered exactly as they'll appear in the Transactions
   // dropdown — this editor IS the single source of truth for that ordering.
@@ -35,6 +38,17 @@ export function SettingsPage() {
     for (const list of map.values()) list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     return map;
   }, [categories]);
+
+  function toggleGroup(id: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function expandAll() { setOpenGroups(new Set(sortedGroups.map(g => g.id))); }
+  function collapseAll() { setOpenGroups(new Set()); }
 
   async function moveGroup(id: string, dir: -1 | 1) {
     const idx = sortedGroups.findIndex(g => g.id === id);
@@ -57,6 +71,41 @@ export function SettingsPage() {
       addCategory({ ...a, order: bOrder }),
       addCategory({ ...b, order: aOrder }),
     ]);
+  }
+
+  // Move a sub-category into a different Category (group), appending it at the end.
+  async function moveSubcategoryToGroup(cat: Category, targetGroup: string) {
+    if ((cat.group || 'Miscellaneous') === targetGroup) return;
+    const siblings = catsByGroup.get(targetGroup) || [];
+    const order = siblings.length > 0 ? Math.max(...siblings.map(c => c.order ?? 0)) + 1 : 0;
+    await addCategory({ ...cat, group: targetGroup, order });
+    setOpenGroups(prev => new Set(prev).add(sortedGroups.find(g => g.name === targetGroup)?.id || ''));
+  }
+
+  // Drag-and-drop reordering/regrouping (desktop pointer devices). The up/down
+  // buttons and "Move to" dropdown below cover touch devices, where native HTML5
+  // drag-and-drop mostly doesn't work.
+  function handleDrop(targetCat: Category | null, targetGroupName: string) {
+    if (!dragCatId) return;
+    const dragged = categories.find(c => c.id === dragCatId);
+    setDragCatId(null);
+    setDragOverCatId(null);
+    if (!dragged) return;
+
+    if (!targetCat) {
+      // Dropped on a group header/empty area — append to end of that group.
+      moveSubcategoryToGroup(dragged, targetGroupName);
+      return;
+    }
+    if (dragged.id === targetCat.id) return;
+
+    const siblings = catsByGroup.get(targetGroupName) || [];
+    const withoutDragged = siblings.filter(c => c.id !== dragged.id);
+    const targetIdx = withoutDragged.findIndex(c => c.id === targetCat.id);
+    withoutDragged.splice(targetIdx, 0, { ...dragged, group: targetGroupName });
+    const updates = withoutDragged.map((c, i) => ({ ...c, group: targetGroupName, order: i }));
+    Promise.all(updates.map(c => addCategory(c)));
+    setOpenGroups(prev => new Set(prev).add(sortedGroups.find(g => g.name === targetGroupName)?.id || ''));
   }
 
   async function handleAddGroup() {
@@ -434,16 +483,22 @@ export function SettingsPage() {
         {/* Category Editor — the single, unified place to edit Categories (groups) and
             their Sub-categories, including the order they appear in everywhere else
             (Transactions dropdown, Budget rows). Every edit here saves immediately —
-            there's no separate "unsaved draft" state to lose track of. */}
+            there's no separate "unsaved draft" state to lose track of.
+            Categories collapse by default (click the name/chevron) so the page stays
+            short instead of dumping every sub-category on screen at once. Sub-categories
+            can be moved between Categories via drag-and-drop (desktop) or the "Move to"
+            dropdown (works everywhere, including touch, where native drag doesn't). */}
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Categories ({categories.length})</h3>
               <p style={{ margin: '0.25rem 0 0', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                Auto-classification matches narration text against each sub-category's keywords, in the order shown below.
+                Click a Category to expand it. Drag a sub-category (⠿) to reorder or drop it on another Category to move it there.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn-ghost" onClick={expandAll} style={{ fontSize: '0.75rem' }}>Expand all</button>
+              <button className="btn-ghost" onClick={collapseAll} style={{ fontSize: '0.75rem' }}>Collapse all</button>
               <button className="btn-ghost" onClick={resetToDefaults} style={{ fontSize: '0.75rem' }}>Reset defaults</button>
               <button className="btn-ghost" onClick={handleAddGroup} style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                 <Plus size={13} /> Add Category
@@ -460,17 +515,30 @@ export function SettingsPage() {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '600px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {sortedGroups.map((group, gi) => {
               const subcats = catsByGroup.get(group.name) || [];
+              const open = openGroups.has(group.id);
               return (
-                <div key={group.id} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                <div
+                  key={group.id}
+                  style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); handleDrop(null, group.name); }}
+                >
                   {/* Group header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', padding: '0.5rem 0.625rem', background: 'var(--bg-elevated)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <button onClick={() => moveGroup(group.id, -1)} disabled={gi === 0} style={{ background: 'none', border: 'none', cursor: gi === 0 ? 'default' : 'pointer', color: gi === 0 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronUp size={13} /></button>
                       <button onClick={() => moveGroup(group.id, 1)} disabled={gi === sortedGroups.length - 1} style={{ background: 'none', border: 'none', cursor: gi === sortedGroups.length - 1 ? 'default' : 'pointer', color: gi === sortedGroups.length - 1 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronDown size={13} /></button>
                     </div>
+                    <button
+                      onClick={() => toggleGroup(group.id)}
+                      title={open ? 'Collapse' : 'Expand'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '2px', display: 'flex' }}
+                    >
+                      {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    </button>
                     {editingGroupId === group.id ? (
                       <>
                         <input
@@ -485,16 +553,20 @@ export function SettingsPage() {
                       </>
                     ) : (
                       <span
-                        onClick={() => startRenameGroup(group.id, group.name)}
-                        title="Click to rename"
+                        onClick={() => toggleGroup(group.id)}
+                        onDoubleClick={() => startRenameGroup(group.id, group.name)}
+                        title="Click to expand/collapse, double-click to rename"
                         style={{ flex: 1, fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)', cursor: 'pointer' }}
                       >
                         {group.name}
                       </span>
                     )}
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{subcats.length}</span>
-                    <button onClick={() => addSubcategory(group.name)} title="Add sub-category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', padding: '4px' }}>
+                    <button onClick={() => { addSubcategory(group.name); setOpenGroups(prev => new Set(prev).add(group.id)); }} title="Add sub-category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', padding: '4px' }}>
                       <Plus size={14} />
+                    </button>
+                    <button onClick={() => startRenameGroup(group.id, group.name)} title="Rename category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '4px' }}>
+                      <Edit2 size={13} />
                     </button>
                     <button onClick={() => handleDeleteGroup(group.id, group.name)} title="Delete category" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
                       <Trash2 size={14} />
@@ -502,10 +574,27 @@ export function SettingsPage() {
                   </div>
 
                   {/* Sub-categories */}
-                  {subcats.length > 0 && (
+                  {open && subcats.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', padding: '0.5rem' }}>
                       {subcats.map((cat, ci) => (
-                        <div key={cat.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: 'var(--bg-main)', borderRadius: '8px' }}>
+                        <div
+                          key={cat.id}
+                          draggable
+                          onDragStart={() => setDragCatId(cat.id)}
+                          onDragEnd={() => { setDragCatId(null); setDragOverCatId(null); }}
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setDragOverCatId(cat.id); }}
+                          onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(cat, group.name); }}
+                          style={{
+                            display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', padding: '0.5rem',
+                            background: dragOverCatId === cat.id ? 'rgba(59,130,246,0.12)' : 'var(--bg-main)',
+                            borderRadius: '8px',
+                            border: dragOverCatId === cat.id ? '1px dashed #60a5fa' : '1px solid transparent',
+                            opacity: dragCatId === cat.id ? 0.4 : 1,
+                          }}
+                        >
+                          <span style={{ cursor: 'grab', color: 'var(--text-faint)', display: 'flex', touchAction: 'none' }} title="Drag to reorder or move">
+                            <GripVertical size={14} />
+                          </span>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <button onClick={() => moveSubcategory(cat, -1)} disabled={ci === 0} style={{ background: 'none', border: 'none', cursor: ci === 0 ? 'default' : 'pointer', color: ci === 0 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronUp size={12} /></button>
                             <button onClick={() => moveSubcategory(cat, 1)} disabled={ci === subcats.length - 1} style={{ background: 'none', border: 'none', cursor: ci === subcats.length - 1 ? 'default' : 'pointer', color: ci === subcats.length - 1 ? 'var(--text-faint)' : 'var(--text-dim)', padding: 0, lineHeight: 0 }}><ChevronDown size={12} /></button>
@@ -534,6 +623,14 @@ export function SettingsPage() {
                             placeholder="🏷️"
                             style={{ width: '44px', textAlign: 'center', flexShrink: 0 }}
                           />
+                          <select
+                            value={group.name}
+                            onChange={e => moveSubcategoryToGroup(cat, e.target.value)}
+                            title="Move to a different Category"
+                            style={{ width: '110px', fontSize: '0.75rem', flexShrink: 0 }}
+                          >
+                            {sortedGroups.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                          </select>
                           <button
                             onClick={() => confirm(`Delete "${cat.name}"?`) && deleteCategory(cat.id)}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '6px', flexShrink: 0 }}
@@ -542,6 +639,11 @@ export function SettingsPage() {
                           </button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {open && subcats.length === 0 && (
+                    <div style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-faint)' }}>
+                      No sub-categories yet — drop one here, or use the + above.
                     </div>
                   )}
                 </div>
