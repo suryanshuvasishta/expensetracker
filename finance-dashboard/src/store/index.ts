@@ -100,6 +100,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   async deleteTransaction(id) {
     await db.transactions.delete(id);
+    await db.tombstones.put({ id, deletedAt: new Date().toISOString() });
     set(state => ({
       transactions: state.transactions.filter(t => t.id !== id),
     }));
@@ -108,6 +109,8 @@ export const useStore = create<AppState>((set, get) => ({
   async deleteBySourceFile(sourceFile) {
     const ids = (await db.transactions.where('sourceFile').equals(sourceFile).toArray()).map(t => t.id);
     await db.transactions.bulkDelete(ids);
+    const deletedAt = new Date().toISOString();
+    await db.tombstones.bulkPut(ids.map(id => ({ id, deletedAt })));
     await db.uploadedFiles.where('name').equals(sourceFile).delete();
     set(state => ({
       transactions: state.transactions.filter(t => t.sourceFile !== sourceFile),

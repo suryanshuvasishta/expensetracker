@@ -6,12 +6,30 @@ import { useStore } from '../store';
 
 // Google Drive two-way sync for a couple sharing one Drive folder.
 // Each device pushes its full local DB to its own file (device-<owner>.json) and
-// pulls + merges the other device files (union by record id). Monthly backup files
-// (JSON + CSV × Suryanshu/Khushboo/Combined) are rewritten on every sync.
+// pulls + merges EVERY device file, including its own (union by record id) — this
+// is what lets a locally-wiped/cleared DB self-heal from its own last backup
+// instead of that wipe getting pushed over the backup. Deletions are tracked as
+// tombstones so a merge can never silently resurrect something you deliberately
+// deleted. Monthly backup files (JSON + CSV × Suryanshu/Khushboo/Combined) are
+// rewritten on every sync.
 //
 // Requires a Google OAuth Client ID (see DRIVE_SYNC_SETUP.md). Uses the full
 // `drive` scope because the folder is shared between two Google accounts and the
 // narrower drive.file scope can't see files created under the other account.
+
+/** Thrown when a push would overwrite a Drive backup with far fewer transactions
+ *  than it currently holds — almost always a sign of local data loss (cleared
+ *  DB, failed load, etc.) rather than an intentional bulk delete. Callers should
+ *  confirm with the user and retry with force:true if the shrink is intentional. */
+export class SyncGuardError extends Error {
+  constructor(public remoteCount: number, public localCount: number) {
+    super(
+      `Local data has ${localCount} transactions but the Drive backup has ${remoteCount}. ` +
+      `Refusing to overwrite — this looks like local data loss, not an intentional deletion.`
+    );
+    this.name = 'SyncGuardError';
+  }
+}
 
 const SCOPE = 'https://www.googleapis.com/auth/drive';
 const FOLDER_NAME = 'FinanceDashboardSync';
@@ -199,12 +217,32 @@ function stamp(t: Transaction): string {
  * transactions use last-write-wins on updatedAt/createdAt; budgets, investments,
  * liabilities, and categories are added only when missing locally (each person
  * edits their own on their own device, so id-collisions mean "already have it").
+ *
+ * Tombstones from the remote are merged in first and used to both (a) filter out
+ * incoming transactions that were deliberately deleted elsewhere, so a merge can
+ * never resurrect them, and (b) delete any local copy that predates the remote
+ * deletion but hasn't been removed locally yet.
  */
 async function mergeRemoteSnapshot(snapshot: Snapshot): Promise<number> {
   if (!snapshot.version || !snapshot.transactions) throw new Error('Invalid snapshot');
 
+  // 1. Merge tombstones first — deletions are terminal, so we only ever add new ones.
+  const localTombstones = await db.tombstones.toArray();
+  const localTombstoneIds = new Set(localTombstones.map(t => t.id));
+  const newTombstones = (snapshot.tombstones || []).filter(t => !localTombstoneIds.has(t.id));
+  if (newTombstones.length) await db.tombstones.bulkPut(newTombstones);
+  const allTombstoneIds = new Set([...localTombstoneIds, ...newTombstones.map(t => t.id)]);
+
+  // 2. Apply any local transactions that a remote device already tombstoned.
+  const staleLocalIds = (await db.transactions.toArray())
+    .map(t => t.id)
+    .filter(id => allTombstoneIds.has(id));
+  if (staleLocalIds.length) await db.transactions.bulkDelete(staleLocalIds);
+
+  // 3. Merge transactions, skipping anything tombstoned (deliberately deleted) anywhere.
   const localTxns = new Map((await db.transactions.toArray()).map(t => [t.id, t]));
   const toApply = snapshot.transactions.filter(remote => {
+    if (allTombstoneIds.has(remote.id)) return false;
     const local = localTxns.get(remote.id);
     return !local || stamp(remote) > stamp(local);
   });
@@ -221,7 +259,7 @@ async function mergeRemoteSnapshot(snapshot: Snapshot): Promise<number> {
   await addMissing(db.liabilities, snapshot.liabilities);
   await addMissing(db.categories, snapshot.categories);
 
-  return toApply.length;
+  return toApply.length + staleLocalIds.length;
 }
 
 // ---------- sync ----------
@@ -234,7 +272,7 @@ export interface SyncResult {
 
 let syncing = false;
 
-export async function syncNow(): Promise<SyncResult> {
+export async function syncNow(force = false): Promise<SyncResult> {
   if (syncing) throw new Error('Sync already in progress');
   const deviceOwner = getDeviceOwner();
   if (!deviceOwner) throw new Error('Set which person this device belongs to first');
@@ -242,15 +280,22 @@ export async function syncNow(): Promise<SyncResult> {
   try {
     const folderId = await ensureFolder();
 
-    // 1. Pull: merge every device file except our own
+    // 1. Pull: merge every device file, INCLUDING our own. Merging our own last
+    // backup back in is what lets a cleared/corrupted local DB self-heal on the
+    // next sync instead of that empty state getting pushed over the backup —
+    // tombstones (merged first, inside mergeRemoteSnapshot) stop this from
+    // resurrecting anything that was deliberately deleted.
     const q = encodeURIComponent(`'${folderId}' in parents and trashed=false and name contains 'device-'`);
     const listing = await driveFetch(`${API}/files?q=${q}&fields=files(id,name)&pageSize=10`);
     const pulledFrom: string[] = [];
     let mergedTransactions = 0;
+    let ownRemoteCount: number | null = null;
     for (const f of listing.files || []) {
-      if (f.name === `device-${deviceOwner}.json`) continue;
       try {
         const snapshot = (await downloadJSON(f.id)) as Snapshot;
+        if (f.name === `device-${deviceOwner}.json`) {
+          ownRemoteCount = snapshot.transactions?.length ?? 0;
+        }
         mergedTransactions += await mergeRemoteSnapshot(snapshot);
         pulledFrom.push(f.name);
       } catch (e) {
@@ -258,14 +303,21 @@ export async function syncNow(): Promise<SyncResult> {
       }
     }
 
-    // Refresh in-memory state and re-run correlation over the merged set
-    if (mergedTransactions > 0) {
-      await useStore.getState().loadAll();
-      await useStore.getState().rerunCorrelation();
-    }
+    // Always refresh in-memory state from IndexedDB after any merge writes, even
+    // when nothing new came in — otherwise the UI can silently drift from what's
+    // actually on disk (e.g. after tombstone-driven deletes with 0 net additions).
+    await useStore.getState().loadAll();
+    await useStore.getState().rerunCorrelation();
 
-    // 2. Push: our full local DB as this device's file
+    // 2. Push: our full local DB as this device's file — but refuse to overwrite
+    // a substantially larger remote backup with a much smaller local state
+    // unless explicitly forced. This is the guard against local data loss
+    // (cleared DB, failed load, etc.) silently becoming permanent remote loss.
     const snapshot = await buildFullSnapshot();
+    const localCount = snapshot.transactions.length;
+    if (!force && ownRemoteCount !== null && ownRemoteCount > 0 && localCount < ownRemoteCount * 0.5) {
+      throw new SyncGuardError(ownRemoteCount, localCount);
+    }
     await uploadFile(folderId, `device-${deviceOwner}.json`, JSON.stringify(snapshot), 'application/json');
 
     // 3. Monthly backups for the current month: JSON + CSV × Suryanshu/Khushboo/Combined

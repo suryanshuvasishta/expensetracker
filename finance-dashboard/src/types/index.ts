@@ -196,6 +196,12 @@ export interface CategoryRule {
   createdAt: string;
 }
 
+/** Deletion record so Drive sync can propagate deletes instead of only ever merging additions. */
+export interface Tombstone {
+  id: string;        // deleted record's id (transaction id)
+  deletedAt: string;
+}
+
 export type LiabilityType = 'Home Loan' | 'Car Loan' | 'Personal Loan' | 'Credit Card' | 'Other';
 
 export interface Liability {
