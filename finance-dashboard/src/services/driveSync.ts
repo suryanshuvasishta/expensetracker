@@ -22,11 +22,15 @@ import { useStore } from '../store';
  *  DB, failed load, etc.) rather than an intentional bulk delete. Callers should
  *  confirm with the user and retry with force:true if the shrink is intentional. */
 export class SyncGuardError extends Error {
-  constructor(public remoteCount: number, public localCount: number) {
+  remoteCount: number;
+  localCount: number;
+  constructor(remoteCount: number, localCount: number) {
     super(
       `Local data has ${localCount} transactions but the Drive backup has ${remoteCount}. ` +
       `Refusing to overwrite — this looks like local data loss, not an intentional deletion.`
     );
+    this.remoteCount = remoteCount;
+    this.localCount = localCount;
     this.name = 'SyncGuardError';
   }
 }
