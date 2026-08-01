@@ -18,9 +18,27 @@ export interface Investment {
   currentValue: number;
   purchaseCost?: number;
   goal?: string;
+  /** Exchange ticker for live price lookups, e.g. "RELIANCE.NS", "NIFTYBEES.NS". */
+  ticker?: string;
   updatedAt: string;
   notes?: string;
 }
+
+/** Editable financial goal used to categorize investments (Retirement, Child's
+ *  Education, Emergency Fund, or any custom goal the user defines). */
+export interface Goal {
+  id: string;
+  name: string;
+}
+
+export const DEFAULT_GOALS: Goal[] = [
+  { id: 'retirement', name: 'Retirement' },
+  { id: 'child-education', name: "Child's Education" },
+  { id: 'emergency-fund', name: 'Emergency Fund' },
+  { id: 'home-ownership', name: 'Home Ownership' },
+  { id: 'consumer-durables', name: 'Consumer Durables' },
+  { id: 'other', name: 'Other' },
+];
 
 export type AccountType =
   | 'HDFC Bank'

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PlusCircle, Trash2, Edit2, Upload, X, Check, KeyRound } from 'lucide-react';
+import { PlusCircle, Trash2, Edit2, Upload, X, Check, KeyRound, RefreshCw, CheckSquare, Square } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
 import type { Investment, AssetClass, Owner, Liability, LiabilityType } from '../../types';
@@ -8,6 +8,7 @@ import { generateId } from '../../parsers/base';
 import { extractTextFromPDF } from '../../parsers';
 import { fmtCompact as fmt, fmtINR as fmtFull } from '../../utils/format';
 import { ASSET_CLASS_COLORS as PALETTE_ASSET_COLORS } from '../../theme/palette';
+import { fetchLatestPrices } from '../../services/priceFeed';
 
 const LIABILITY_TYPES: LiabilityType[] = ['Home Loan', 'Car Loan', 'Personal Loan', 'Credit Card', 'Other'];
 
@@ -31,7 +32,7 @@ const EMPTY_LIABILITY = (owner: Owner): Omit<Liability, 'id'> => ({
 });
 
 export function PortfolioPage() {
-  const { investments, saveInvestment, deleteInvestment, bulkSaveInvestments, selectedOwner, liabilities, saveLiability, deleteLiability } = useStore();
+  const { investments, saveInvestment, deleteInvestment, deleteInvestments, bulkSaveInvestments, selectedOwner, liabilities, saveLiability, deleteLiability } = useStore();
   const [editing, setEditing] = useState<Investment | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingLiab, setEditingLiab] = useState<Liability | null>(null);
@@ -40,6 +41,9 @@ export function PortfolioPage() {
   const [importing, setImporting] = useState<'zerodha' | 'cas' | null>(null);
   const [casPassword, setCasPassword] = useState('');
   const [casFile, setCasFile] = useState<File | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
 
   const ownerFilter = selectedOwner === 'All' ? null : selectedOwner as Owner;
   const visible = ownerFilter ? investments.filter(i => i.owner === ownerFilter || i.owner === 'Joint') : investments;
@@ -54,6 +58,17 @@ export function PortfolioPage() {
     if (!byClass[inv.assetClass]) byClass[inv.assetClass] = [];
     byClass[inv.assetClass].push(inv);
   }
+
+  // Group by financial goal (unassigned holdings bucketed separately)
+  const byGoal: Record<string, Investment[]> = {};
+  for (const inv of visible) {
+    const key = inv.goal || 'Unassigned';
+    if (!byGoal[key]) byGoal[key] = [];
+    byGoal[key].push(inv);
+  }
+  const goalTotals = Object.entries(byGoal)
+    .map(([goal, items]) => ({ goal, total: items.reduce((s, i) => s + i.currentValue, 0), count: items.length }))
+    .sort((a, b) => b.total - a.total);
 
   function startEdit(inv: Investment) {
     setEditing({ ...inv });
@@ -76,6 +91,57 @@ export function PortfolioPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this holding?')) return;
     await deleteInvestment(id);
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected(prev => prev.size === visible.length ? new Set() : new Set(visible.map(i => i.id)));
+  }
+
+  async function handleBulkDelete() {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected holding${selected.size > 1 ? 's' : ''}? This can't be undone.`)) return;
+    await deleteInvestments([...selected]);
+    setSelected(new Set());
+  }
+
+  async function handleRefreshPrices() {
+    const withTickers = visible.filter(i => i.ticker && i.units);
+    if (withTickers.length === 0) {
+      setRefreshMsg('No holdings have a ticker + units set — add a ticker (e.g. RELIANCE.NS) in the holding editor first.');
+      return;
+    }
+    setRefreshing(true);
+    setRefreshMsg('');
+    try {
+      const tickers = [...new Set(withTickers.map(i => i.ticker!))];
+      const prices = await fetchLatestPrices(tickers);
+      const now = new Date().toISOString();
+      const updated: Investment[] = [];
+      const failed: string[] = [];
+      for (const inv of withTickers) {
+        const result = prices.get(inv.ticker!);
+        if (result?.price != null) {
+          updated.push({ ...inv, nav: result.price, currentValue: inv.units! * result.price, updatedAt: now });
+        } else {
+          failed.push(`${inv.name} (${inv.ticker}): ${result?.error || 'unknown error'}`);
+        }
+      }
+      if (updated.length > 0) await bulkSaveInvestments(updated);
+      setRefreshMsg(
+        `Updated ${updated.length} of ${withTickers.length} holding(s).` +
+        (failed.length > 0 ? ` Failed: ${failed.join('; ')}` : '')
+      );
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const visibleLiabs = ownerFilter ? liabilities.filter(l => l.owner === ownerFilter || l.owner === 'Joint') : liabilities;
@@ -207,6 +273,22 @@ export function PortfolioPage() {
           </div>
         )}
 
+        {/* By financial goal */}
+        {goalTotals.length > 0 && totalValue > 0 && (
+          <div className="card">
+            <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', fontWeight: 600 }}>By Financial Goal</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+              {goalTotals.map(({ goal, total, count }) => (
+                <div key={goal} style={{ display: 'flex', flexDirection: 'column', gap: '0.125rem', padding: '0.5rem 0.875rem', borderRadius: '8px', background: 'var(--bg-elevated)', minWidth: '120px' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{goal}</span>
+                  <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(total)}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-faint)' }}>{count} holding{count !== 1 ? 's' : ''} · {(total / totalValue * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Import + Add */}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <button className="btn-primary" onClick={startNew} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -224,7 +306,31 @@ export function PortfolioPage() {
             </span>
             <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleCASFileSelect} disabled={importing !== null} />
           </label>
+          <button
+            className="btn-ghost"
+            onClick={handleRefreshPrices}
+            disabled={refreshing}
+            title="Fetch latest price for holdings with a ticker set, and recompute value = units × price"
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <RefreshCw size={14} className={refreshing ? 'spinning' : ''} /> {refreshing ? 'Refreshing…' : 'Refresh Prices'}
+          </button>
+          {selected.size > 0 && (
+            <button
+              className="btn-ghost"
+              onClick={handleBulkDelete}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#f87171', borderColor: 'rgba(239,68,68,0.3)' }}
+            >
+              <Trash2 size={14} /> Delete {selected.size} Selected
+            </button>
+          )}
         </div>
+
+        {refreshMsg && (
+          <div style={{ padding: '0.625rem 0.875rem', background: 'rgba(96,165,250,0.08)', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.25)', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+            {refreshMsg}
+          </div>
+        )}
 
         {/* CAS password prompt */}
         {casFile && (
@@ -276,7 +382,10 @@ export function PortfolioPage() {
                 <span style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#f1f5f9' }}>{fmt(classTotal)}</span>
               </div>
               <div style={{ padding: '0.25rem 0' }}>
-                <div style={{ display: 'flex', gap: '0.5rem', padding: '0.25rem 1rem', fontSize: '0.7rem', color: '#475569' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', padding: '0.25rem 1rem', fontSize: '0.7rem', color: '#475569', alignItems: 'center' }}>
+                  <button onClick={toggleSelectAll} title="Select all" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0, display: 'flex' }}>
+                    {selected.size === visible.length && visible.length > 0 ? <CheckSquare size={14} /> : <Square size={14} />}
+                  </button>
                   <span style={{ flex: 1 }}>Name</span>
                   <span style={{ width: '90px' }}>Institution</span>
                   <span style={{ width: '60px', textAlign: 'right' }}>Owner</span>
@@ -291,6 +400,9 @@ export function PortfolioPage() {
                   const pnlPct = pnl !== null && inv.purchaseCost ? pnl / inv.purchaseCost * 100 : null;
                   return (
                     <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', borderTop: '1px solid var(--border-subtle)' }}>
+                      <button onClick={() => toggleSelect(inv.id)} title="Select" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0, display: 'flex', flexShrink: 0 }}>
+                        {selected.has(inv.id) ? <CheckSquare size={14} color="#60a5fa" /> : <Square size={14} />}
+                      </button>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.name}</div>
                         {(inv.notes || inv.goal) && (
@@ -428,9 +540,27 @@ interface FormProps {
   onClose: () => void;
 }
 
+const ADD_NEW_GOAL = '__add_new_goal__';
+
 function InvestmentForm({ inv, onChange, onSave, onClose }: FormProps) {
+  const { goals, addGoal } = useStore();
+
   function set<K extends keyof Investment>(key: K, value: Investment[K]) {
     onChange({ ...inv, [key]: value });
+  }
+
+  async function handleGoalSelect(value: string) {
+    if (value === ADD_NEW_GOAL) {
+      const name = window.prompt('New financial goal name (e.g. "Sabbatical Fund"):');
+      if (!name || !name.trim()) return;
+      const trimmed = name.trim();
+      if (!goals.some(g => g.name.toLowerCase() === trimmed.toLowerCase())) {
+        await addGoal({ id: generateId(), name: trimmed });
+      }
+      set('goal', trimmed);
+      return;
+    }
+    set('goal', value || undefined);
   }
 
   function recalcValue() {
@@ -472,14 +602,19 @@ function InvestmentForm({ inv, onChange, onSave, onClose }: FormProps) {
           </Field>
 
           {['Equity MF', 'Debt/Liquid MF', 'ETF', 'Stocks'].includes(inv.assetClass) && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <Field label="Units / Qty">
-                <input type="number" value={inv.units ?? ''} onChange={e => set('units', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.000" style={{ width: '100%' }} />
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <Field label="Units / Qty">
+                  <input type="number" value={inv.units ?? ''} onChange={e => set('units', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.000" style={{ width: '100%' }} />
+                </Field>
+                <Field label={inv.assetClass === 'Stocks' || inv.assetClass === 'ETF' ? 'LTP / Price (₹)' : 'NAV (₹)'}>
+                  <input type="number" value={inv.nav ?? ''} onChange={e => set('nav', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.00" style={{ width: '100%' }} />
+                </Field>
+              </div>
+              <Field label="Ticker (for Refresh Prices)">
+                <input value={inv.ticker ?? ''} onChange={e => set('ticker', e.target.value.toUpperCase() || undefined)} placeholder="e.g. RELIANCE.NS, NIFTYBEES.NS" style={{ width: '100%' }} />
               </Field>
-              <Field label={inv.assetClass === 'Stocks' || inv.assetClass === 'ETF' ? 'LTP / Price (₹)' : 'NAV (₹)'}>
-                <input type="number" value={inv.nav ?? ''} onChange={e => set('nav', parseFloat(e.target.value) || undefined)} onBlur={recalcValue} placeholder="0.00" style={{ width: '100%' }} />
-              </Field>
-            </div>
+            </>
           )}
 
           {inv.assetClass === 'FD' && (
@@ -502,15 +637,11 @@ function InvestmentForm({ inv, onChange, onSave, onClose }: FormProps) {
           <Field label="Purchase Cost (₹) — for P&L">
             <input type="number" value={inv.purchaseCost ?? ''} onChange={e => set('purchaseCost', parseFloat(e.target.value) || undefined)} placeholder="Total invested amount" style={{ width: '100%' }} />
           </Field>
-          <Field label="Goal">
-            <select value={inv.goal ?? ''} onChange={e => set('goal', e.target.value || undefined)} style={{ width: '100%' }}>
+          <Field label="Financial Goal">
+            <select value={inv.goal ?? ''} onChange={e => handleGoalSelect(e.target.value)} style={{ width: '100%' }}>
               <option value="">— None —</option>
-              <option>Retirement</option>
-              <option>{"Children's Fund"}</option>
-              <option>Home Ownership</option>
-              <option>Emergency</option>
-              <option>Consumer Durables</option>
-              <option>Other</option>
+              {goals.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+              <option value={ADD_NEW_GOAL}>+ Add new goal…</option>
             </select>
           </Field>
           <Field label="Notes">
