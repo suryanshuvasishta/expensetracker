@@ -12,18 +12,27 @@ const MONTHS = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-function getAvailableMonths(transactions: { month: string }[]): string[] {
-  const months = new Set(transactions.map(t => t.month));
-  return Array.from(months).sort().reverse();
-}
+// Fixed year range rather than deriving options from existing transactions —
+// deriving from data meant the dropdown could omit whatever month is currently
+// selected (e.g. selectedMonth defaults to "this month", which may have no
+// transactions yet). A <select> whose value has no matching <option> falls back
+// to visually showing the first option while the underlying state silently
+// keeps the old value, so the list would look like it's showing e.g. "Jul" while
+// actually still filtering on "Aug" with zero results. A fixed range guarantees
+// there's always a real option for whatever selectedMonth actually is.
+const YEARS = [2026, 2027, 2028, 2029, 2030];
 
 export function Header({ title }: Props) {
-  const { transactions, selectedMonth, setSelectedMonth } = useStore();
+  const { selectedMonth, setSelectedMonth } = useStore();
   const { setOpen } = useMobileMenu();
-  const months = getAvailableMonths(transactions);
 
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedMonth(e.target.value);
+  const [selYear, selMonthNum] = selectedMonth.split('-').map(Number);
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedMonth(`${selYear}-${e.target.value.padStart(2, '0')}`);
+  };
+  const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedMonth(`${e.target.value}-${String(selMonthNum).padStart(2, '0')}`);
   };
 
   return (
@@ -67,23 +76,24 @@ export function Header({ title }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
         <Calendar size={14} color="#94a3b8" style={{ flexShrink: 0 }} />
         <select
-          value={selectedMonth}
-          onChange={handleChange}
+          value={selMonthNum}
+          onChange={handleMonthChange}
           style={{ width: 'auto', padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
         >
-          {months.length === 0 && (
-            <option value={selectedMonth}>{formatMonth(selectedMonth)}</option>
-          )}
-          {months.map(m => (
-            <option key={m} value={m}>{formatMonth(m)}</option>
+          {MONTHS.map((m, i) => (
+            <option key={m} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select
+          value={selYear}
+          onChange={handleYearChange}
+          style={{ width: 'auto', padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+        >
+          {YEARS.map(y => (
+            <option key={y} value={y}>{y}</option>
           ))}
         </select>
       </div>
     </header>
   );
-}
-
-function formatMonth(m: string): string {
-  const [year, month] = m.split('-');
-  return `${MONTHS[parseInt(month) - 1]} ${year}`;
 }
