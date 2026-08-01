@@ -1,7 +1,6 @@
 import React from 'react';
-import { Calendar, Menu } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { useStore } from '../../store';
-import { useMobileMenu } from '../../context/MobileMenu';
 
 interface Props {
   title: string;
@@ -24,7 +23,6 @@ const YEARS = [2026, 2027, 2028, 2029, 2030];
 
 export function Header({ title }: Props) {
   const { selectedMonth, setSelectedMonth } = useStore();
-  const { setOpen } = useMobileMenu();
 
   const [selYear, selMonthNum] = selectedMonth.split('-').map(Number);
 
@@ -49,28 +47,6 @@ export function Header({ title }: Props) {
       gap: '0.5rem',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-        {/* Hamburger — only visible on mobile via CSS */}
-        <button
-          className="header-hamburger"
-          onClick={() => setOpen(true)}
-          style={{
-            display: 'none', // overridden by .header-hamburger media query
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text-muted)',
-            padding: '10px',
-            borderRadius: '8px',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minWidth: 44,
-            minHeight: 44,
-            flexShrink: 0,
-          }}
-          aria-label="Open menu"
-        >
-          <Menu size={20} />
-        </button>
         <h1 style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h1>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
