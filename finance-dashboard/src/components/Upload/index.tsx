@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react';
 import { useStore } from '../../store';
-import { Header } from '../Layout/Header';
 import { extractTextFromPDF, extractTransactionsFromXLS, parseStatement, finalizeTransactions, detectAccount } from '../../parsers';
 import { normalizeNarration } from '../../services/correlator';
 import type { AccountType, UploadedFile, Owner } from '../../types';
@@ -24,7 +23,11 @@ interface FileState {
   password?: string;
 }
 
-export function UploadPage() {
+/** Statement import UI — drag/drop bank & CC statements, review previously
+ *  uploaded files. Embedded at the bottom of the Transactions page rather
+ *  than living on its own tab, since imports and manual entries both feed
+ *  the same list and the Kakeibo check that reconciles them. */
+export function ImportPanel() {
   const { addTransactions, addUploadedFile, uploadedFiles, deleteBySourceFile, selectedOwner, selectedMonth, setSelectedMonth, transactions } = useStore();
   const [fileStates, setFileStates] = useState<FileState[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -40,7 +43,7 @@ export function UploadPage() {
       count: 0,
     }));
     setFileStates(prev => [...prev, ...newFiles]);
-  }, []);
+  }, [selectedOwner]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -135,115 +138,111 @@ export function UploadPage() {
   }
 
   return (
-    <div style={{ flex: 1, overflow: 'auto' }}>
-      <Header title="Upload Statements" />
-      <div style={{ padding: '1.5rem', maxWidth: '900px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Drop zone */}
+      <div
+        {...getRootProps()}
+        style={{
+          border: `2px dashed ${isDragActive ? '#3b82f6' : '#334155'}`,
+          borderRadius: '12px',
+          padding: '2.5rem 1.5rem',
+          textAlign: 'center',
+          cursor: 'pointer',
+          background: isDragActive ? 'rgba(59,130,246,0.08)' : '#1e293b',
+          transition: 'all 0.2s',
+        }}
+      >
+        <input {...getInputProps()} />
+        <Upload size={32} color={isDragActive ? '#3b82f6' : '#475569'} style={{ margin: '0 auto 0.75rem' }} />
+        <p style={{ color: '#94a3b8', margin: '0 0 0.5rem', fontSize: '0.9375rem' }}>
+          {isDragActive ? 'Drop files here...' : 'Drag & drop bank / credit card statements here'}
+        </p>
+        <p style={{ color: '#475569', fontSize: '0.8125rem', margin: 0 }}>
+          Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC, Paytm
+        </p>
+      </div>
 
-        {/* Drop zone */}
-        <div
-          {...getRootProps()}
-          style={{
-            border: `2px dashed ${isDragActive ? '#3b82f6' : '#334155'}`,
-            borderRadius: '12px',
-            padding: '3rem',
-            textAlign: 'center',
-            cursor: 'pointer',
-            background: isDragActive ? 'rgba(59,130,246,0.08)' : '#1e293b',
-            transition: 'all 0.2s',
-          }}
-        >
-          <input {...getInputProps()} />
-          <Upload size={40} color={isDragActive ? '#3b82f6' : '#475569'} style={{ margin: '0 auto 1rem' }} />
-          <p style={{ color: '#94a3b8', margin: '0 0 0.5rem', fontSize: '0.9375rem' }}>
-            {isDragActive ? 'Drop files here...' : 'Drag & drop bank statements here'}
-          </p>
-          <p style={{ color: '#475569', fontSize: '0.8125rem', margin: 0 }}>
-            Supports PDF, CSV, XLS, XLSX — HDFC, ICICI, Axis CC, SBI CC, ICICI CC, Paytm
-          </p>
+      {/* Imported-month mismatch warning */}
+      {importedMonths.some(m => m !== selectedMonth) && (
+        <div className="card" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <AlertCircle size={16} color="#fbbf24" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '0.8125rem', color: '#fbbf24', flex: 1 }}>
+            Imported transactions for {importedMonths.filter(m => m !== selectedMonth).join(', ')} —
+            you're currently viewing {selectedMonth} and won't see them until you switch months.
+          </span>
+          {importedMonths.filter(m => m !== selectedMonth).map(m => (
+            <button key={m} className="btn-primary" style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }} onClick={() => setSelectedMonth(m)}>
+              Switch to {m}
+            </button>
+          ))}
         </div>
+      )}
 
-        {/* Imported-month mismatch warning */}
-        {importedMonths.some(m => m !== selectedMonth) && (
-          <div className="card" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <AlertCircle size={16} color="#fbbf24" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '0.8125rem', color: '#fbbf24', flex: 1 }}>
-              Imported transactions for {importedMonths.filter(m => m !== selectedMonth).join(', ')} —
-              your Transactions page is currently showing {selectedMonth} and won't display them until you switch months.
-            </span>
-            {importedMonths.filter(m => m !== selectedMonth).map(m => (
-              <button key={m} className="btn-primary" style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem' }} onClick={() => setSelectedMonth(m)}>
-                Switch to {m}
+      {/* File list */}
+      {fileStates.length > 0 && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Files to Process</h3>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn-ghost" onClick={() => setFileStates([])}>Clear all</button>
+              <button
+                className="btn-primary"
+                onClick={processAll}
+                disabled={processing || fileStates.every(f => f.status === 'done')}
+              >
+                {processing ? 'Processing...' : 'Process All'}
               </button>
-            ))}
+            </div>
           </div>
-        )}
+          {fileStates.map(fs => (
+            <FileRow
+              key={fs.id}
+              fs={fs}
+              onAccountChange={account => updateFileState(fs.id, { account })}
+              onOwnerChange={owner => updateFileState(fs.id, { owner })}
+              onPasswordChange={password => updateFileState(fs.id, { password })}
+              onProcess={() => processFile(fs)}
+              onRemove={() => setFileStates(prev => prev.filter(f => f.id !== fs.id))}
+            />
+          ))}
+        </div>
+      )}
 
-        {/* File list */}
-        {fileStates.length > 0 && (
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>Files to Process</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn-ghost" onClick={() => setFileStates([])}>Clear all</button>
+      {/* Previously uploaded files */}
+      {uploadedFiles.length > 0 && (
+        <div className="card">
+          <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>Uploaded Files</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {uploadedFiles.map(f => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem', background: '#0f172a', borderRadius: '8px' }}>
+                <FileText size={16} color="#64748b" style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{f.account} · {f.transactionCount} transactions · {f.month}</div>
+                </div>
                 <button
-                  className="btn-primary"
-                  onClick={processAll}
-                  disabled={processing || fileStates.every(f => f.status === 'done')}
+                  onClick={() => deleteBySourceFile(f.name)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', borderRadius: '4px' }}
+                  title="Delete transactions from this file"
                 >
-                  {processing ? 'Processing...' : 'Process All'}
+                  <Trash2 size={14} />
                 </button>
               </div>
-            </div>
-            {fileStates.map(fs => (
-              <FileRow
-                key={fs.id}
-                fs={fs}
-                onAccountChange={account => updateFileState(fs.id, { account })}
-                onOwnerChange={owner => updateFileState(fs.id, { owner })}
-                onPasswordChange={password => updateFileState(fs.id, { password })}
-                onProcess={() => processFile(fs)}
-                onRemove={() => setFileStates(prev => prev.filter(f => f.id !== fs.id))}
-              />
             ))}
           </div>
-        )}
-
-        {/* Previously uploaded files */}
-        {uploadedFiles.length > 0 && (
-          <div className="card">
-            <h3 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600 }}>Uploaded Files</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {uploadedFiles.map(f => (
-                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem', background: '#0f172a', borderRadius: '8px' }}>
-                  <FileText size={16} color="#64748b" style={{ flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '0.8125rem', color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
-                    <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{f.account} · {f.transactionCount} transactions · {f.month}</div>
-                  </div>
-                  <button
-                    onClick={() => deleteBySourceFile(f.name)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px', borderRadius: '4px' }}
-                    title="Delete transactions from this file"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tips */}
-        <div className="card" style={{ background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.25)' }}>
-          <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#60a5fa' }}>Tips for best results</h4>
-          <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#94a3b8', fontSize: '0.8125rem', lineHeight: 1.7 }}>
-            <li>Download statements as PDF from your bank's net banking portal</li>
-            <li>HDFC statements are often password-protected with your customer ID or date of birth</li>
-            <li>For ICICI Bank: use the "Download Statement" option, not "Email Statement"</li>
-            <li>Credit card statements should be the "Detailed Statement" not "Summary"</li>
-            <li>If auto-detection fails, select the account type manually from the dropdown</li>
-          </ul>
         </div>
+      )}
+
+      {/* Tips */}
+      <div className="card" style={{ background: 'rgba(59,130,246,0.08)', borderColor: 'rgba(59,130,246,0.25)' }}>
+        <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', color: '#60a5fa' }}>Tips for best results</h4>
+        <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#94a3b8', fontSize: '0.8125rem', lineHeight: 1.7 }}>
+          <li>Download statements as PDF from your bank's net banking portal</li>
+          <li>HDFC statements are often password-protected with your customer ID or date of birth</li>
+          <li>For ICICI Bank: use the "Download Statement" option, not "Email Statement"</li>
+          <li>Credit card statements should be the "Detailed Statement" not "Summary"</li>
+          <li>If auto-detection fails, select the account type manually from the dropdown</li>
+        </ul>
       </div>
     </div>
   );

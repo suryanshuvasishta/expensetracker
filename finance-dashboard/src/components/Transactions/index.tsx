@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
-import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles, Plus, ClipboardCheck, Trash2 } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Search, Filter, Download, Link2, Edit2, Check, X, Sparkles, Plus, ClipboardCheck, Trash2, ChevronDown, ChevronUp, Upload as UploadIcon, AlertTriangle } from 'lucide-react';
 import { useStore } from '../../store';
 import { Header } from '../Layout/Header';
+import { ImportPanel } from '../Upload';
 import { generateId } from '../../parsers/base';
 import type { Transaction, Category, Owner, AccountType, PaymentMethod } from '../../types';
 import { buildCategoryGroups, MANUAL_SOURCE, OWNERS } from '../../types';
@@ -18,8 +19,11 @@ function fmt(n: number) {
 }
 
 export function TransactionsPage() {
-  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, addTransactions, saveCategoryRule, applyRuleToAll, addCategory } = useStore();
+  const { transactions, categories, selectedMonth, selectedOwner, updateTransaction, deleteTransaction, addTransactions, saveCategoryRule, applyRuleToAll, addCategory, rerunCorrelation } = useStore();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
   const [search, setSearch] = useState('');
   const [filterAccount, setFilterAccount] = useState<string>('');
   const [filterType, setFilterType] = useState<string>('');
@@ -59,6 +63,15 @@ export function TransactionsPage() {
   const manualVerified = manualMonth.filter(t => t.isCorrelationPair && t.correlatedIds?.length);
   const manualCash = manualMonth.filter(t => t.account === 'Cash');
   const manualPending = manualMonth.filter(t => t.account !== 'Cash' && !(t.isCorrelationPair && t.correlatedIds?.length));
+
+  useEffect(() => { setChecked(false); }, [selectedMonth]);
+
+  async function runKakeiboCheck() {
+    setChecking(true);
+    await rerunCorrelation(); // re-match manual entries against whatever statements have been imported since
+    setChecked(true);
+    setChecking(false);
+  }
 
   async function handleAddManual(txn: Transaction) {
     await addTransactions([txn]);
@@ -186,16 +199,46 @@ export function TransactionsPage() {
 
         {/* Kakeibo month-end check */}
         {manualMonth.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap', padding: '0.625rem 1rem', borderRadius: '10px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', fontSize: '0.8125rem' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#60a5fa', fontWeight: 600 }}>
-              <ClipboardCheck size={15} /> Kakeibo check ({selectedMonth})
-            </span>
-            <span style={{ color: '#4ade80' }}>✓ {manualVerified.length} verified against statements</span>
-            <span style={{ color: '#94a3b8' }}>💵 {manualCash.length} cash (no statement)</span>
-            <span style={{ color: manualPending.length > 0 ? '#fbbf24' : '#64748b' }}>
-              ⏳ {manualPending.length} awaiting statement match
-              {manualPending.length > 0 && ` (${fmt(manualPending.reduce((s, t) => s + t.amount, 0))})`}
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', fontSize: '0.8125rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#60a5fa', fontWeight: 600 }}>
+                <ClipboardCheck size={15} /> Kakeibo check ({selectedMonth})
+              </span>
+              <span style={{ color: '#4ade80' }}>✓ {manualVerified.length} verified against statements</span>
+              <span style={{ color: '#94a3b8' }}>💵 {manualCash.length} cash (no statement)</span>
+              <span style={{ color: manualPending.length > 0 ? '#fbbf24' : '#64748b' }}>
+                ⏳ {manualPending.length} awaiting statement match
+                {manualPending.length > 0 && ` (${fmt(manualPending.reduce((s, t) => s + t.amount, 0))})`}
+              </span>
+              <button
+                className="btn-primary"
+                onClick={runKakeiboCheck}
+                disabled={checking}
+                style={{ padding: '0.375rem 0.75rem', fontSize: '0.75rem', marginLeft: 'auto' }}
+              >
+                {checking ? 'Checking...' : 'Run Kakeibo Check'}
+              </button>
+            </div>
+
+            {checked && (
+              manualPending.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#fbbf24', fontWeight: 600 }}>
+                    <AlertTriangle size={13} /> Flagged — no matching statement transaction found:
+                  </span>
+                  {manualPending.map(t => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.625rem', background: 'rgba(251,191,36,0.08)', borderRadius: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</span>
+                      <span style={{ color: 'var(--text-muted)', flex: 1, minWidth: '120px' }}>{t.narration}</span>
+                      <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{t.account}</span>
+                      <span style={{ fontWeight: 600 }}>{t.type === 'debit' ? '-' : '+'}{fmt(t.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ color: '#4ade80' }}>✓ All manual entries this month are accounted for.</span>
+              )
+            )}
           </div>
         )}
 
@@ -320,6 +363,28 @@ export function TransactionsPage() {
             <button className="btn-ghost" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>Next →</button>
           </div>
         )}
+
+        {/* Import statements — collapsed by default; manual entry is the primary flow,
+            this is for reconciling against bank/CC statements at month-end */}
+        <div className="card" style={{ marginTop: '0.5rem' }}>
+          <button
+            onClick={() => setShowImport(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-primary)',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9375rem', fontWeight: 600 }}>
+              <UploadIcon size={16} /> Import Bank / Credit Card Statements
+            </span>
+            {showImport ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          {showImport && (
+            <div style={{ marginTop: '1rem' }}>
+              <ImportPanel />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
